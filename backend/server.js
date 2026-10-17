@@ -256,6 +256,8 @@ const server = createServer(async (request, response) => {
         const code = error.status === 413 ? 'BODY_TOO_LARGE' : error.status === 503 ? 'AI_PROVIDER_ERROR' : 'INVALID_JSON'
         if (error.providerStatus) {
           console.error(`[${requestId}] Gemini request failed: HTTP ${error.providerStatus}${error.providerCode ? ` code=${error.providerCode}` : ''}`)
+        } else if (error.providerFailure) {
+          console.error(`[${requestId}] Gemini request failed: ${error.providerFailure}`)
         }
         writeJson(response, error.status || 400, { error: { code, message: error.message, requestId } })
       }
