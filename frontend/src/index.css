@@ -1,0 +1,23 @@
+:root {
+  font-family: 'Segoe UI', Arial, sans-serif;
+  color: #17231f;
+  background: #f6f8f5;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-optical-sizing: auto;
+  font-weight: 400;
+  --ink: #17231f;
+  --muted: #727d77;
+  --green: #146c50;
+  --green-dark: #104e3d;
+  --mint: #e9f2ec;
+  --line: #e4e9e5;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; min-height: 100vh; }
+button, textarea { font: inherit; }
+button:focus-visible, a:focus-visible, textarea:focus-visible { outline: 3px solid #75bd9d; outline-offset: 3px; }
+::selection { color: #10271e; background: #cbe8d7; }

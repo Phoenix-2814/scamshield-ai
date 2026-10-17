@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: scamshield-demo
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SCAMSHIELD_AI_PROVIDER
+        value: rules

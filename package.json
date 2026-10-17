@@ -1,0 +1,15 @@
+{
+  "name": "scamshield",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "start": "node backend/server.js",
+    "build": "npm --prefix frontend run build",
+    "lint": "npm --prefix frontend run lint && node --check backend/server.js && node --check backend/gemini-classifier.js && node --check shared/detector.js && node --check scripts/dev.mjs",
+    "test": "npm --prefix frontend test"
+  }
+}

@@ -1,0 +1,148 @@
+openapi: 3.1.0
+info:
+  title: ScamShield API
+  version: 1.0.0
+  description: Privacy-conscious message analysis prototype. Message contents are processed in memory and are not persisted by this service.
+servers:
+  - url: /
+paths:
+  /api/health:
+    get:
+      operationId: getHealth
+      summary: Check service health
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, service, requestId]
+                properties:
+                  status: { type: string, const: ok }
+                  service: { type: string, const: scamshield-api }
+                  requestId: { type: string, format: uuid }
+  /api/config:
+    get:
+      operationId: getAnalysisConfig
+      summary: Read available analysis modes
+      responses:
+        '200':
+          description: Public analysis configuration; no credentials are returned
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [analysisModes, aiAssistedAvailable, externalProvider, requestId]
+                properties:
+                  analysisModes:
+                    type: array
+                    items: { type: string, enum: [rules, ai-assisted] }
+                  aiAssistedAvailable: { type: boolean }
+                  externalProvider: { type: [string, 'null'] }
+                  requestId: { type: string, format: uuid }
+  /api/analyze:
+    post:
+      operationId: analyzeMessage
+      summary: Analyze a message for configured warning patterns
+      description: The service does not check live URL reputation or determine whether a message is definitively fraudulent.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [message]
+              properties:
+                message:
+                  type: string
+                  minLength: 1
+                  maxLength: 5000
+                useAiAnalysis:
+                  type: boolean
+                  default: false
+      responses:
+        '200':
+          description: Explainable heuristic analysis
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [requestId, analysis]
+                properties:
+                  requestId: { type: string, format: uuid }
+                  analysis:
+                    type: object
+                    required: [score, level, categories, signals, advice, mode]
+                    properties:
+                      score: { type: integer, minimum: 0, maximum: 100 }
+                      level: { type: string, enum: [Low, Medium, High] }
+                      mode: { type: string, enum: [rules, ai-assisted] }
+                      assessment:
+                        type: object
+                        properties:
+                          scamType: { type: string }
+                          summary: { type: string }
+                      categories:
+                        type: array
+                        items: { type: string }
+                      signals:
+                        type: array
+                        items:
+                          type: object
+                          required: [name, category, points, evidence, advice]
+                          properties:
+                            name: { type: string }
+                            category: { type: string }
+                            points: { type: integer, minimum: 0 }
+                            evidence: { type: string }
+                            explanation: { type: string }
+                            advice: { type: string }
+                      advice:
+                        type: array
+                        items: { type: string }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '413': { $ref: '#/components/responses/TooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+components:
+  responses:
+    BadRequest:
+      description: Invalid JSON or message input
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    TooLarge:
+      description: Request body or message exceeds configured size
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    UnsupportedMediaType:
+      description: Request is not application/json
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    RateLimited:
+      description: Per-process request limit exceeded; retry after the Retry-After interval
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    ServiceUnavailable:
+      description: AI provider is not configured or could not complete the analysis
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, requestId]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            requestId: { type: string, format: uuid }
