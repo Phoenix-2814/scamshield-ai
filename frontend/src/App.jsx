@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from 'react'
+﻿import { useEffect, useRef, useState } from 'react'
 import { analyzeMessageRequest, getAnalyzerConfig } from './api'
 import './App.css'
 
@@ -17,16 +17,20 @@ function App() {
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [config, setConfig] = useState(null)
   const [copyState, setCopyState] = useState('')
+  const configRequest = useRef(null)
 
   useEffect(() => {
-    getAnalyzerConfig().then(setConfig).catch(() => setConfig({ aiAssistedAvailable: false }))
+    configRequest.current = getAnalyzerConfig().catch(() => ({ aiAssistedAvailable: false }))
+    configRequest.current.then(setConfig)
   }, [])
 
   async function handleAnalyze(event) {
     event.preventDefault()
     setIsAnalyzing(true)
     try {
-      setResult(await analyzeMessageRequest(message, config?.aiAssistedAvailable === true))
+      const analyzerConfig = config ?? await (configRequest.current ?? getAnalyzerConfig())
+      setConfig(analyzerConfig)
+      setResult(await analyzeMessageRequest(message, analyzerConfig.aiAssistedAvailable === true))
     } catch (error) {
       setResult({ error: error.message })
     } finally {

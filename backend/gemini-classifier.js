@@ -52,7 +52,7 @@ export async function classifyMessageWithGemini(message, { apiKey, model = 'gemi
         store: false,
         system_instruction: systemInstructions,
         input: message,
-        generation_config: { max_output_tokens: 800 },
+        generation_config: { max_output_tokens: 2048 },
         response_format: {
           type: 'text',
           mime_type: 'application/json',
@@ -105,6 +105,13 @@ export async function classifyMessageWithGemini(message, { apiKey, model = 'gemi
   if (payload.status && payload.status !== 'completed') {
     const error = new Error('The AI analysis did not complete. Please try again.')
     error.status = 503
+    const status = typeof payload.status === 'string' && /^[a-zA-Z0-9_-]{1,40}$/.test(payload.status)
+      ? payload.status
+      : 'unknown'
+    const reason = typeof payload.incomplete_details?.reason === 'string' && /^[a-zA-Z0-9_-]{1,80}$/.test(payload.incomplete_details.reason)
+      ? payload.incomplete_details.reason
+      : undefined
+    error.providerFailure = `status=${status}${reason ? ` reason=${reason}` : ''}`
     throw error
   }
 
