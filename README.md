@@ -1,6 +1,6 @@
 # ScamShield
 
-ScamShield is a scam-safety product prototype focused on analyzing intent and explaining warning signs across suspicious messages and conversation transcripts. The web app submits content to a same-origin Node API. Rules-based analysis is available by default; when the operator configures Grok or Gemini, semantic analysis runs automatically.
+ScamShield is a scam-safety product prototype focused on analyzing intent and explaining warning signs across suspicious messages and conversation transcripts. The web app submits content to a same-origin Node API. Rules-based analysis is available by default; when the operator configures Groq or Gemini, semantic analysis runs automatically.
 
 ## Run locally
 
@@ -22,14 +22,14 @@ Requests must be JSON. Messages are limited to 5,000 characters. The API enforce
 
 ## Optional AI analysis
 
-Rules-based analysis is the default. To enable Grok locally, copy `.env.example` to `.env`, uncomment the Grok settings, and set your xAI key in `XAI_API_KEY`. Alternatively, uncomment the Gemini settings and set `GEMINI_API_KEY`. The `npm run dev` and `npm start` commands load the root `.env` file. Keep provider keys server-side; never put them in frontend code or a `VITE_` variable.
+Rules-based analysis is the default. To enable Groq locally, copy `.env.example` to `.env`, uncomment the Groq settings, and set your key in `GROQ_API_KEY`. Alternatively, uncomment the Gemini settings and set `GEMINI_API_KEY`. The `npm run dev` and `npm start` commands load the root `.env` file. Keep provider keys server-side; never put them in frontend code or a `VITE_` variable.
 
-Grok settings:
+Groq settings:
 
 ```text
-SCAMSHIELD_AI_PROVIDER=xai
-XAI_API_KEY=<your server-side API key>
-GROK_MODEL=grok-4.7
+SCAMSHIELD_AI_PROVIDER=groq
+GROQ_API_KEY=<your server-side API key>
+GROQ_MODEL=openai/gpt-oss-20b
 ```
 
 Gemini settings:
@@ -40,7 +40,7 @@ GEMINI_API_KEY=<your server-side API key>
 GEMINI_MODEL=gemini-3.8-flash
 ```
 
-When Grok is configured, each analysis is sent to xAI. xAI states that API requests and responses may be retained for up to 30 days for abuse auditing and are not used to train models without permission; teams can enable Zero Data Retention. The interface discloses the provider and links to [xAI API data handling](https://docs.x.ai/developers/faq/security). Gemini analyses are sent to Google; the interface links to [Gemini API data handling](https://ai.google.dev/gemini-api/docs/zdr). If no AI provider is configured, only the rules-based scan is available.
+When Groq is configured, each analysis is sent to Groq. Groq says inference inputs and outputs are not retained by default, though it may temporarily retain them for reliability or abuse investigations. The interface discloses the provider and links to [Groq data handling](https://console.groq.com/docs/your-data). Gemini analyses are sent to Google; the interface links to [Gemini API data handling](https://ai.google.dev/gemini-api/docs/zdr). If no AI provider is configured, only the rules-based scan is available.
 
 ## Run in a container
 
@@ -55,18 +55,19 @@ The container runs as the unprivileged `node` user and serves both the built fro
 
 ## Deploy a public demo on Render
 
-The included `render.yaml` configures a free Docker web service in Singapore, uses `/api/health` for health checks, and keeps analysis rules-based by default. To deploy it:
+The included `render.yaml` configures a free Docker web service in Singapore, uses `/api/health` for health checks, and enables Groq analysis when `GROQ_API_KEY` is set. To deploy it:
 
 1. Push this project to a GitHub or GitLab repository you control.
 2. In Render, choose **New → Blueprint**, connect that repository, and apply the `render.yaml` configuration.
-3. Wait for the first deploy, then open the generated `onrender.com` URL and try a built-in example.
-4. Copy the working URL into the hackathon submission.
+3. Add your Groq key as `GROQ_API_KEY` in the service's Environment settings, then save and redeploy.
+4. Open the generated `onrender.com` URL and try a built-in example.
+5. Copy the working URL into the hackathon submission.
 
 Render's free web services sleep after 15 minutes without traffic and can take about a minute to wake up. Open the demo shortly before presenting it. See [Render's free instance limits](https://render.com/docs/free).
 
 ## Current detection scope
 
-The shared rule engine is in `shared/detector.js`. It checks for credential requests, pressure tactics, payment fees, fake KYC, UPI collect/PIN-to-receive language, job-fee lures, remote-access requests, prize lures, and a small set of suspicious URL traits. Grok or Gemini can analyze pasted conversation transcripts for a supported social-engineering sequence and quotes matching evidence. High-risk results include account or India-specific financial-fraud response guidance, and users can copy an assessment to share with a trusted contact. Neither mode resolves redirects, queries live threat feeds, or validates senders. Scores and model risk labels are indicators, not proof or probabilities. A low result does not prove a message is safe.
+The shared rule engine is in `shared/detector.js`. It checks for credential requests, pressure tactics, payment fees, fake KYC, UPI collect/PIN-to-receive language, job-fee lures, remote-access requests, prize lures, and a small set of suspicious URL traits. Groq or Gemini can analyze pasted conversation transcripts for a supported social-engineering sequence and quotes matching evidence. High-risk results include account or India-specific financial-fraud response guidance, and users can copy an assessment to share with a trusted contact. Neither mode resolves redirects, queries live threat feeds, or validates senders. Scores and model risk labels are indicators, not proof or probabilities. A low result does not prove a message is safe.
 
 ## Production work still required
 

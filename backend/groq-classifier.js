@@ -1,9 +1,9 @@
 import { responseSchema, systemInstructions } from './gemini-classifier.js'
 
-export async function classifyMessageWithGrok(message, { apiKey, model = 'grok-4.7', timeoutMs = 30000 }) {
+export async function classifyMessageWithGroq(message, { apiKey, model = 'openai/gpt-oss-20b', timeoutMs = 30000 }) {
   let response
   try {
-    response = await fetch('https://api.x.ai/v1/responses', {
+    response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -11,18 +11,17 @@ export async function classifyMessageWithGrok(message, { apiKey, model = 'grok-4
       },
       body: JSON.stringify({
         model,
-        input: [
-          { role: 'system', content: systemInstructions },
+        messages: [
+          { role: 'system', content: `${systemInstructions} Return a JSON object matching the supplied schema.` },
           { role: 'user', content: message }
         ],
-        store: false,
-        max_output_tokens: 2048,
-        text: {
-          format: {
-            type: 'json_schema',
+        max_completion_tokens: 2048,
+        response_format: {
+          type: 'json_schema',
+          json_schema: {
             name: 'scam_assessment',
-            schema: responseSchema,
-            strict: true
+            strict: true,
+            schema: responseSchema
           }
         }
       }),
@@ -31,7 +30,7 @@ export async function classifyMessageWithGrok(message, { apiKey, model = 'grok-4
   } catch (cause) {
     const timedOut = cause?.name === 'TimeoutError' || cause?.name === 'AbortError'
     const error = new Error(timedOut
-      ? 'Grok took too long to respond. Please try again.'
+      ? 'Groq took too long to respond. Please try again.'
       : 'The AI analysis provider could not be reached. Please try again.')
     error.status = 503
     error.providerFailure = timedOut ? 'timeout' : 'network'
@@ -45,23 +44,22 @@ export async function classifyMessageWithGrok(message, { apiKey, model = 'grok-4
       ? details.code
       : undefined
     const safeDetail = typeof details.message === 'string'
-      ? details.message.replace(/[\r\n\u0000-\u001F]/g, ' ').replace(/Bearer\s+\S+/gi, 'Bearer [redacted]').replace(/xai-[a-zA-Z0-9_-]+/gi, '[redacted key]').slice(0, 240)
+      ? details.message.replace(/[\r\n\u0000-\u001F]/g, ' ').replace(/Bearer\s+\S+/gi, 'Bearer [redacted]').replace(/gsk_[a-zA-Z0-9_-]+/gi, '[redacted key]').slice(0, 240)
       : undefined
     const messages = {
-      400: 'Grok rejected the request. Check GROK_MODEL and structured output support.',
-      401: 'Grok rejected the API key. Check that XAI_API_KEY is valid.',
-      402: 'The xAI API account needs available credits or billing.',
-      403: 'Grok denied access to this API key or model. Check the key permissions and model access.',
-      404: 'Grok could not find the configured model or API resource. Check GROK_MODEL and model access.',
-      429: 'The xAI API rate limit or quota was reached. Wait before retrying.',
-      500: 'Grok is temporarily unavailable. Please retry later.',
-      502: 'Grok is temporarily unavailable. Please retry later.',
-      503: 'Grok is temporarily unavailable. Please retry later.'
+      400: 'Groq rejected the request. Check GROQ_MODEL and structured output support.',
+      401: 'Groq rejected the API key. Check that GROQ_API_KEY is valid.',
+      402: 'The Groq API account needs available credits or billing.',
+      403: 'Groq denied access to this API key or model. Check the key and model access.',
+      404: 'Groq could not find the configured model or API resource. Check GROQ_MODEL and model access.',
+      429: 'The Groq API rate limit or quota was reached. Wait before retrying.',
+      500: 'Groq is temporarily unavailable. Please retry later.',
+      502: 'Groq is temporarily unavailable. Please retry later.',
+      503: 'Groq is temporarily unavailable. Please retry later.'
     }
-    const message = response.status === 400 && safeDetail
-      ? `Grok rejected the request: ${safeDetail}`
-      : messages[response.status] || `Grok returned HTTP ${response.status}. Check the server log for its error code.`
-    const error = new Error(message)
+    const error = new Error(response.status === 400 && safeDetail
+      ? `Groq rejected the request: ${safeDetail}`
+      : messages[response.status] || `Groq returned HTTP ${response.status}. Check the server log for its error code.`)
     error.status = 503
     error.providerStatus = response.status
     error.providerCode = safeCode
@@ -76,17 +74,7 @@ export async function classifyMessageWithGrok(message, { apiKey, model = 'grok-4
     error.status = 503
     throw error
   }
-  if (payload.status && payload.status !== 'completed') {
-    const error = new Error('The AI analysis did not complete. Please try again.')
-    error.status = 503
-    error.providerFailure = `status=${String(payload.status).slice(0, 40)}`
-    throw error
-  }
-
-  const text = payload.output
-    ?.filter((item) => item.type === 'message')
-    .flatMap((item) => item.content ?? [])
-    .find((item) => item.type === 'output_text')?.text
+  const text = payload.choices?.[0]?.message?.content
   if (!text) {
     const error = new Error('The AI analysis provider returned no result. Please try again.')
     error.status = 503

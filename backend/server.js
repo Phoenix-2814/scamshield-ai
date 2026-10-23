@@ -6,24 +6,24 @@ import { extname, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { analyzeMessage } from '../shared/detector.js'
 import { classifyMessageWithGemini } from './gemini-classifier.js'
-import { classifyMessageWithGrok } from './grok-classifier.js'
+import { classifyMessageWithGroq } from './groq-classifier.js'
 
 const projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const staticRoot = resolve(projectRoot, 'frontend', 'dist')
 const isProduction = process.env.NODE_ENV === 'production'
 const requestedAiProvider = process.env.SCAMSHIELD_AI_PROVIDER || 'rules'
-if (!['rules', 'gemini', 'xai'].includes(requestedAiProvider)) throw new Error('SCAMSHIELD_AI_PROVIDER must be rules, gemini, or xai.')
+if (!['rules', 'gemini', 'groq'].includes(requestedAiProvider)) throw new Error('SCAMSHIELD_AI_PROVIDER must be rules, gemini, or groq.')
 const providerKeyAvailable = requestedAiProvider === 'gemini'
   ? Boolean(process.env.GEMINI_API_KEY)
-  : requestedAiProvider === 'xai'
-    ? Boolean(process.env.XAI_API_KEY)
+  : requestedAiProvider === 'groq'
+    ? Boolean(process.env.GROQ_API_KEY)
     : true
 const aiProvider = providerKeyAvailable ? requestedAiProvider : 'rules'
 if (!providerKeyAvailable) console.warn(`SCAMSHIELD_AI_PROVIDER=${requestedAiProvider} has no API key configured; using rules mode.`)
 const geminiModel = process.env.GEMINI_MODEL || 'gemini-3.8-flash'
-const grokModel = process.env.GROK_MODEL || 'grok-4.7'
+const groqModel = process.env.GROQ_MODEL || 'openai/gpt-oss-20b'
 const aiEnabled = aiProvider !== 'rules'
-const externalProvider = aiProvider === 'gemini' ? 'Gemini' : aiProvider === 'xai' ? 'Grok' : null
+const externalProvider = aiProvider === 'gemini' ? 'Gemini' : aiProvider === 'groq' ? 'Groq' : null
 const port = readInteger(process.env.PORT, 8787, 1, 65535)
 const host = process.env.HOST || '127.0.0.1'
 const maxBodyBytes = readInteger(process.env.MAX_BODY_BYTES, 24000, 1024, 65536)
@@ -237,7 +237,7 @@ const server = createServer(async (request, response) => {
           }
           const assessment = aiProvider === 'gemini'
             ? await classifyMessageWithGemini(message, { apiKey: process.env.GEMINI_API_KEY, model: geminiModel })
-            : await classifyMessageWithGrok(message, { apiKey: process.env.XAI_API_KEY, model: grokModel })
+            : await classifyMessageWithGroq(message, { apiKey: process.env.GROQ_API_KEY, model: groqModel })
           const aiSignals = assessment.signals.map((signal) => ({
             name: signal.name,
             category: assessment.scamType,
