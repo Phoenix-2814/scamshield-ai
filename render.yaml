@@ -19,3 +19,7 @@ services:
         sync: false
       - key: VIRUSTOTAL_API_KEY
         sync: false
+      - key: SIGHTENGINE_API_USER
+        sync: false
+      - key: SIGHTENGINE_API_SECRET
+        sync: false

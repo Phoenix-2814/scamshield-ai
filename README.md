@@ -4,9 +4,10 @@ ScamShield is a scam-safety product prototype focused on analyzing intent and ex
 
 ## Run locally
 
-Requirements: Node.js 20.19+ and npm. The frontend dependencies are listed in `frontend/package-lock.json`.
+Requirements: Node.js 22+ and npm. The frontend dependencies are listed in `frontend/package-lock.json`; the server uses the C2PA Node SDK for embedded Content Credentials validation.
 
 ```sh
+npm ci
 npm ci --prefix frontend
 npm run dev
 ```
@@ -18,7 +19,7 @@ Open the Vite URL shown in the terminal. The dev command starts both the API on 
 - `GET /api/health` returns service health.
 - `POST /api/analyze` accepts `{"message":"..."}` and returns an analysis with a request ID.
 - `POST /api/check-url` accepts `{"url":"https://example.com"}` and performs a separate VirusTotal reputation check.
-- `POST /api/analyze-media` accepts multipart `file` and `frames` fields for image/video review. Media review requires `GROQ_API_KEY`.
+- `POST /api/analyze-media` accepts multipart `file` and `frames` fields for image/video/audio review. Groq content analysis requires `GROQ_API_KEY`; optional Sightengine media-origin scoring requires `SIGHTENGINE_API_USER` and `SIGHTENGINE_API_SECRET`.
 
 Requests must be JSON. Messages are limited to 5,000 characters. The API enforces a request body limit, applies a small per-process rate limit, sends browser security headers, and does not log message contents. The rate limiter is an in-memory prototype guard; it resets at restart and is not suitable across multiple replicas.
 
@@ -51,7 +52,12 @@ GEMINI_MODEL=gemini-3.8-flash
 
 When Groq is configured, each analysis is sent to Groq. Groq says inference inputs and outputs are not retained by default, though it may temporarily retain them for reliability or abuse investigations. The interface discloses the provider and links to [Groq data handling](https://console.groq.com/docs/your-data). Gemini analyses are sent to Google; the interface links to [Gemini API data handling](https://ai.google.dev/gemini-api/docs/zdr). If no AI provider is configured, only the rules-based scan is available.
 
-Media review supports JPEG, PNG, WebP, GIF, MP4, WebM, MP3, M4A, WAV, OGG, and FLAC uploads up to 20 MB. Groq Vision reviews images and up to three browser-sampled video frames for visible text, claims, safety concerns, and tentative AI-generation clues, with explicit checks for anatomy, text, spatial geometry, lighting/reflections, and textures. Video and audio files are sent to Groq Whisper for transcription; audio transcript text is checked for scam-language patterns. The service does not detect AI-generated voices or verify audio authenticity, and sampled video frames cannot validate lip sync or motion continuity. The upload is processed in memory and is not saved by this service. Media review requires `GROQ_API_KEY` even when message analysis uses rules or Gemini; `GROQ_VISION_MODEL` defaults to `qwen/qwen3.8-27b`. Appearance-based origin estimates are not forensic detection and cannot establish authenticity. The interface discloses media processing and links to Groq data handling before upload.
+Media review supports JPEG, PNG, WebP, GIF, MP4, WebM, MP3, M4A, WAV, OGG, and FLAC uploads up to 20 MB. Groq Vision reviews images and up to three browser-sampled video frames for visible text, claims, safety concerns, and visual observations. Video and audio are transcribed with Groq Whisper; audio transcript text is checked for scam-language patterns. When configured, Sightengine separately scores images, short videos, and speech for AI-generation signals. Its current detector uses score bands: at least 0.80 is shown as a strong AI-generation signal, at most 0.20 as no strong signal, and intermediate values as inconclusive. These model scores are estimates, not proof. The C2PA Node SDK reads and validates embedded Content Credentials; remote manifest retrieval and OCSP lookups are disabled for uploaded files. A missing credential is not evidence that content is human-made. The interface also links to optional SynthID and reverse-image search tools; ScamShield does not upload media to those tools. Media uploads are processed in memory and not saved by this service. Media review needs `GROQ_API_KEY`; dedicated AI-origin scores additionally need both Sightengine server credentials. `GROQ_VISION_MODEL` defaults to `qwen/qwen3.8-27b`.
+
+```text
+SIGHTENGINE_API_USER=<your Sightengine API user>
+SIGHTENGINE_API_SECRET=<your Sightengine API secret>
+```
 
 ## Run in a container
 

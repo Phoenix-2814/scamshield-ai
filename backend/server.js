@@ -8,6 +8,7 @@ import { analyzeMessage } from '../shared/detector.js'
 import { classifyMessageWithGemini } from './gemini-classifier.js'
 import { classifyMessageWithGroq } from './groq-classifier.js'
 import { analyzeUploadedMedia } from './media-analyzer.js'
+import { sightengineConfigured } from './sightengine.js'
 import { checkMessageUrls, checkSingleUrl } from './virustotal.js'
 
 const projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
@@ -26,6 +27,7 @@ const geminiModel = process.env.GEMINI_MODEL || 'gemini-3.8-flash'
 const groqModel = process.env.GROQ_MODEL || 'openai/gpt-oss-20b'
 const virusTotalAvailable = Boolean(process.env.VIRUSTOTAL_API_KEY)
 const mediaAnalysisAvailable = Boolean(process.env.GROQ_API_KEY)
+const mediaAiDetectionAvailable = sightengineConfigured()
 const aiEnabled = aiProvider !== 'rules'
 const externalProvider = aiProvider === 'gemini' ? 'Gemini' : aiProvider === 'groq' ? 'Groq' : null
 const port = readInteger(process.env.PORT, 8787, 1, 65535)
@@ -224,6 +226,7 @@ const server = createServer(async (request, response) => {
         analysisModes: aiEnabled ? ['rules', 'ai-assisted'] : ['rules'],
         aiAssistedAvailable: aiEnabled,
         mediaAnalysisAvailable,
+        mediaAiDetectionAvailable,
         externalProvider,
         virusTotalAvailable,
         requestId

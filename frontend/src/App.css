@@ -229,6 +229,8 @@ footer { display: flex; justify-content: space-between; padding: 16px max(5%, ca
 .media-result-block ul { margin: 0; padding-left: 17px; color: #66776d; font-size: 10px; line-height: 1.7; }
 .media-result-block p, .media-result-block > small { color: #66776d; font-size: 10px; line-height: 1.7; }
 .media-result-block p { margin: 0; }
+.detection-score { display: flex; align-items: baseline; gap: 9px; margin: 2px 0 5px; color: #52675c; font-size: 10px; }
+.detection-score strong { color: #176751; font-size: 19px; letter-spacing: -.5px; }
 .media-concerns { padding: 10px; border: 1px solid #eddbd7; border-radius: 8px; background: #fff8f6; }
 .media-result-block > small { display: block; margin-top: 5px; }
 .media-provenance-link { margin: 12px 0 0; padding: 10px; border: 1px solid #e4ebe5; border-radius: 7px; background: #fff; color: #738178; font-size: 9px; line-height: 1.6; }
