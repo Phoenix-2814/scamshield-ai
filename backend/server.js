@@ -8,7 +8,7 @@ import { analyzeMessage } from '../shared/detector.js'
 import { classifyMessageWithGemini } from './gemini-classifier.js'
 import { classifyMessageWithGroq } from './groq-classifier.js'
 import { analyzeUploadedMedia } from './media-analyzer.js'
-import { checkSingleUrl } from './virustotal.js'
+import { checkMessageUrls, checkSingleUrl } from './virustotal.js'
 
 const projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const staticRoot = resolve(projectRoot, 'frontend', 'dist')
@@ -368,6 +368,7 @@ const server = createServer(async (request, response) => {
           return
         }
         let analysis = { ...analyzeMessage(message), mode: 'rules' }
+        const urlChecksPromise = checkMessageUrls(message, process.env.VIRUSTOTAL_API_KEY)
         if (body.useAiAnalysis === true) {
           const assessment = aiProvider === 'gemini'
             ? await classifyMessageWithGemini(message, { apiKey: process.env.GEMINI_API_KEY, model: geminiModel })
@@ -395,6 +396,38 @@ const server = createServer(async (request, response) => {
               return true
             }),
             advice: [...new Set([...assessment.advice, ...analysis.advice])]
+          }
+        }
+        const urlChecks = await urlChecksPromise
+        if (urlChecks) {
+          const urlSignals = urlChecks.results.flatMap((result) => {
+            if (result.status === 'malicious') return [{
+              name: 'VirusTotal flagged this URL as malicious',
+              category: 'Malicious URL',
+              points: 0,
+              evidence: result.url,
+              explanation: `${result.malicious} of ${result.total} security vendors flagged this link as malicious.`,
+              advice: 'Do not open this link. If you already entered information, secure the affected account and contact the service through its official channel.'
+            }]
+            if (result.status === 'suspicious') return [{
+              name: 'VirusTotal flagged this URL as suspicious',
+              category: 'Suspicious URL',
+              points: 0,
+              evidence: result.url,
+              explanation: `${result.suspicious} of ${result.total} security vendors flagged this link as suspicious${result.total ? ` out of ${result.total}` : ''}.`,
+              advice: 'Avoid opening this link. Verify the destination through the service official app or website.'
+            }]
+            return []
+          })
+          const vtLevel = urlSignals.some((signal) => signal.category === 'Malicious URL') ? 'High' : urlSignals.length ? 'Medium' : analysis.level
+          const levelRank = { Low: 0, Medium: 1, High: 2 }
+          analysis = {
+            ...analysis,
+            level: levelRank[vtLevel] > levelRank[analysis.level] ? vtLevel : analysis.level,
+            categories: [...new Set([...analysis.categories, ...urlSignals.map((signal) => signal.category)])],
+            signals: [...analysis.signals, ...urlSignals],
+            advice: [...new Set([...analysis.advice, ...urlSignals.map((signal) => signal.advice)])],
+            urlChecks
           }
         }
         writeJson(response, 200, { requestId, analysis })

@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: ScamShield API
   version: 1.0.0
-  description: Privacy-conscious analysis prototype. Message and media contents are processed in memory and are not persisted by this service. URLs are checked separately through the URL tool; checked URLs are sent to VirusTotal, whose API adds submitted or queried URLs to its community dataset. Media files are sent to Groq for visual analysis and video transcription.
+  description: Privacy-conscious analysis prototype. Message and media contents are processed in memory and are not persisted by this service. When configured, URLs in messages are checked automatically, and standalone links can be checked through the URL tool. Checked URLs are sent to VirusTotal, whose API adds submitted or queried URLs to its community dataset. Media files are sent to Groq for visual analysis and video transcription.
 servers:
   - url: /
 paths:
@@ -141,7 +141,7 @@ paths:
     post:
       operationId: analyzeMessage
       summary: Analyze a message for configured warning patterns
-      description: Analyzes message content and conversation signals only. Use the separate URL check endpoint for VirusTotal reputation lookups.
+      description: Analyzes message content and conversation signals. When configured, URLs found in the message are also checked with VirusTotal. Use the separate URL check endpoint to review one standalone link.
       requestBody:
         required: true
         content:
@@ -180,6 +180,28 @@ paths:
                         properties:
                           scamType: { type: string }
                           summary: { type: string }
+                      urlChecks:
+                        type: object
+                        required: [configured, results, skipped]
+                        properties:
+                          configured: { type: boolean }
+                          skipped: { type: integer, minimum: 0 }
+                          results:
+                            type: array
+                            items:
+                              type: object
+                              required: [url, status]
+                              properties:
+                                url: { type: string }
+                                status: { type: string, enum: [malicious, suspicious, no_detections, unrated, pending, not_submitted, unavailable, not_configured] }
+                                malicious: { type: integer, minimum: 0 }
+                                suspicious: { type: integer, minimum: 0 }
+                                harmless: { type: integer, minimum: 0 }
+                                undetected: { type: integer, minimum: 0 }
+                                detections: { type: integer, minimum: 0 }
+                                total: { type: integer, minimum: 0 }
+                                reportUrl: { type: string, format: uri }
+                                message: { type: string }
                       categories:
                         type: array
                         items: { type: string }
