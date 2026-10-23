@@ -22,9 +22,9 @@ const urlCheckLabels = {
 }
 
 const mediaOriginLabels = {
-  likely_ai_generated: 'Visual signs suggest AI generation',
-  no_clear_ai_signs: 'No clear AI signs found',
-  unclear: 'Origin unclear'
+  likely_ai_generated: 'Visual evidence suggests possible AI generation',
+  no_clear_ai_signs: 'No obvious visual signs ? origin unverified',
+  unclear: 'Origin unclear ? cannot verify from appearance alone'
 }
 
 function canvasFrame(source) {
