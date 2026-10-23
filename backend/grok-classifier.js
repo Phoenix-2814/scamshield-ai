@@ -44,6 +44,9 @@ export async function classifyMessageWithGrok(message, { apiKey, model = 'grok-4
     const safeCode = typeof details.code === 'string' && /^[a-zA-Z0-9_-]{1,80}$/.test(details.code)
       ? details.code
       : undefined
+    const safeDetail = typeof details.message === 'string'
+      ? details.message.replace(/[\r\n\u0000-\u001F]/g, ' ').replace(/Bearer\s+\S+/gi, 'Bearer [redacted]').replace(/xai-[a-zA-Z0-9_-]+/gi, '[redacted key]').slice(0, 240)
+      : undefined
     const messages = {
       400: 'Grok rejected the request. Check GROK_MODEL and structured output support.',
       401: 'Grok rejected the API key. Check that XAI_API_KEY is valid.',
@@ -55,7 +58,10 @@ export async function classifyMessageWithGrok(message, { apiKey, model = 'grok-4
       502: 'Grok is temporarily unavailable. Please retry later.',
       503: 'Grok is temporarily unavailable. Please retry later.'
     }
-    const error = new Error(messages[response.status] || `Grok returned HTTP ${response.status}. Check the server log for its error code.`)
+    const message = response.status === 400 && safeDetail
+      ? `Grok rejected the request: ${safeDetail}`
+      : messages[response.status] || `Grok returned HTTP ${response.status}. Check the server log for its error code.`
+    const error = new Error(message)
     error.status = 503
     error.providerStatus = response.status
     error.providerCode = safeCode
