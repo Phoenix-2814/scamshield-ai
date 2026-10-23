@@ -49,3 +49,23 @@ export async function analyzeMediaRequest(file, frames) {
   }
   return payload.mediaAnalysis
 }
+
+export async function checkUrlRequest(url) {
+  let response
+  try {
+    response = await fetch('/api/check-url', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ url }),
+      signal: AbortSignal.timeout(15000)
+    })
+  } catch {
+    throw new Error('ScamShield could not reach its URL analysis service. Check your connection and try again.')
+  }
+  const payload = await response.json().catch(() => null)
+  if (!response.ok) throw new Error(payload?.error?.message ?? 'The URL analysis service could not complete this request.')
+  if (!payload?.urlChecks || !Array.isArray(payload.urlChecks.results)) {
+    throw new Error('The URL analysis service returned an unexpected response.')
+  }
+  return payload.urlChecks
+}

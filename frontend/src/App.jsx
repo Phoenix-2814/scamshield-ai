@@ -1,5 +1,5 @@
 ﻿import { useEffect, useRef, useState } from 'react'
-import { analyzeMediaRequest, analyzeMessageRequest, getAnalyzerConfig } from './api'
+import { analyzeMediaRequest, analyzeMessageRequest, checkUrlRequest, getAnalyzerConfig } from './api'
 import './App.css'
 
 const examples = [
@@ -17,7 +17,6 @@ const urlCheckLabels = {
   no_detections: 'No malicious detections',
   unrated: 'No vendor verdict yet',
   pending: 'Scan pending',
-  not_submitted: 'Not found; scan not submitted',
   unavailable: 'Check unavailable',
   not_configured: 'VirusTotal not configured'
 }
@@ -88,6 +87,11 @@ function App() {
   const [mediaResult, setMediaResult] = useState(null)
   const [mediaError, setMediaError] = useState('')
   const [mediaPreparing, setMediaPreparing] = useState(false)
+  const [activeTool, setActiveTool] = useState('message')
+  const [urlInput, setUrlInput] = useState('')
+  const [urlResult, setUrlResult] = useState(null)
+  const [urlError, setUrlError] = useState('')
+  const [urlChecking, setUrlChecking] = useState(false)
   const configRequest = useRef(null)
 
   useEffect(() => {
@@ -156,6 +160,20 @@ function App() {
     }
   }
 
+  async function handleCheckUrl(event) {
+    event.preventDefault()
+    setUrlChecking(true)
+    setUrlResult(null)
+    setUrlError('')
+    try {
+      setUrlResult(await checkUrlRequest(urlInput))
+    } catch (error) {
+      setUrlError(error.message || 'The URL could not be checked.')
+    } finally {
+      setUrlChecking(false)
+    }
+  }
+
   async function handleAnalyze(event) {
     event.preventDefault()
     setIsAnalyzing(true)
@@ -183,6 +201,9 @@ function App() {
     setMediaPreviewUrl('')
     setMediaResult(null)
     setMediaError('')
+    setUrlInput('')
+    setUrlResult(null)
+    setUrlError('')
   }
 
   function loadExample(example) {
@@ -193,6 +214,9 @@ function App() {
     setMediaPreviewUrl('')
     setMediaResult(null)
     setMediaError('')
+    setUrlInput('')
+    setUrlResult(null)
+    setUrlError('')
   }
 
   async function copyAssessment(analysis) {
@@ -201,7 +225,6 @@ function App() {
       analysis.assessment ? `${analysis.assessment.scamType}: ${analysis.assessment.summary}` : '',
       'Signals:',
       ...analysis.signals.map((signal) => `- ${signal.name}${signal.evidence ? ` | Evidence: ${signal.evidence}` : ''}${signal.explanation ? ` | ${signal.explanation}` : ''}`),
-      ...(analysis.urlChecks?.results?.length ? ['VirusTotal URL checks:', ...analysis.urlChecks.results.map((item) => `- ${item.url}: ${urlCheckLabels[item.status] || item.status}${Number.isInteger(item.detections) ? ` (${item.detections}/${item.total} detections)` : ''}`)] : []),
       'Recommended actions:',
       ...analysis.advice.map((item) => `- ${item}`),
       'This is an automated indicator, not proof that a message is fraudulent.'
@@ -256,10 +279,15 @@ function App() {
 
           <section className="analyzer" id="analyzer">
             <div className="analyzer-heading">
-              <div><span className="section-kicker">MESSAGE CHECK</span><h2>What would you like to review?</h2></div>
+              <div><span className="section-kicker">SCAMSHIELD CHECKS</span><h2>Choose what you want to review</h2></div>
               <span className={`mode-pill${config?.aiAssistedAvailable ? ' mode-ai' : ''}`}><span />{config?.aiAssistedAvailable ? `${config.externalProvider} assisted` : 'Rules-based'}</span>
             </div>
-            <form onSubmit={handleAnalyze}>
+            <div className="tool-tabs" role="tablist" aria-label="Choose a review tool">
+              <button type="button" id="message-tab" role="tab" aria-controls="message-panel" aria-selected={activeTool === 'message'} className={activeTool === 'message' ? 'active' : ''} onClick={() => setActiveTool('message')}><strong>Message</strong><small>Scam and conversation signals</small></button>
+              <button type="button" id="url-tab" role="tab" aria-controls="url-panel" aria-selected={activeTool === 'url'} className={activeTool === 'url' ? 'active' : ''} onClick={() => setActiveTool('url')}><strong>URL</strong><small>VirusTotal reputation check</small></button>
+              <button type="button" id="media-tab" role="tab" aria-controls="media-panel" aria-selected={activeTool === 'media'} className={activeTool === 'media' ? 'active' : ''} onClick={() => setActiveTool('media')}><strong>Image &amp; video</strong><small>Content and AI-origin clues</small></button>
+            </div>
+            {activeTool === 'message' && <form id="message-panel" role="tabpanel" aria-labelledby="message-tab" onSubmit={handleAnalyze}>
               <div className="field-heading">
                 <label htmlFor="message">Message or conversation</label>
                 <span className="field-hint">Up to 5,000 characters</span>
@@ -274,6 +302,52 @@ function App() {
                 maxLength={5000}
                 aria-describedby="privacy-note"
               />
+              <div className="form-footer">
+                <span className="char-count">{message.length.toLocaleString()} / 5,000</span>
+                <div className="actions">
+                  <button type="button" className="secondary-button" onClick={handleClear} disabled={isAnalyzing || (!message && !result && !mediaFile && !mediaResult && !mediaError)}>Clear</button>
+                  <button type="submit" className="primary-button" disabled={isAnalyzing}>{isAnalyzing ? 'Reviewing…' : <>Review message <span aria-hidden="true">↗</span></>}</button>
+                </div>
+              </div>
+              <p className="privacy" id="privacy-note"><span aria-hidden="true">Privacy</span> {config?.aiAssistedAvailable ? config.externalProvider === 'Groq' ? <>Message sent to ScamShield and Groq. Inputs and outputs are not retained by default, but may be temporarily retained for reliability or abuse investigations. <a href="https://console.groq.com/docs/your-data" target="_blank" rel="noreferrer">See Groq data handling</a>.</> : <>Message sent to ScamShield and Google Gemini. Interaction storage is disabled; Google abuse monitoring still applies. <a href="https://ai.google.dev/gemini-api/docs/zdr" target="_blank" rel="noreferrer">See Gemini data handling</a>.</> : <>Message analyzed by ScamShield rules. Message history is not saved.</>} URL reputation checks are a separate tool; message review does not query VirusTotal.</p>
+
+              {result && (
+                <section className={`results${result.error ? ' results-error' : ''}`} aria-live="polite" aria-atomic="true">
+                  {result.error ? <p className="error-message">{result.error}</p> : <>
+                    <div className="result-topline">
+                      <div>
+                        <p className="result-kicker">{result.mode === 'ai-assisted' ? `${(config?.externalProvider || 'AI').toUpperCase()} + RULE ENGINE` : 'RULE ENGINE'}</p>
+                        <h2>Your assessment</h2>
+                      </div>
+                      <div className={`risk-badge risk-${result.level.toLowerCase()}`}><span><small>RISK LEVEL</small><strong>{result.level}</strong></span></div>
+                    </div>
+                    {result.mode === 'ai-assisted' ? <><div className="assessment-summary"><strong>{result.assessment?.scamType}</strong><p>{result.assessment?.summary}</p><small>AI assessment may be wrong. Risk level is not a probability.</small></div>{result.assessment?.attackChain?.length > 0 && <div className="attack-chain"><h3>Social engineering sequence</h3><p className="chain-intro">How the conversation may be building toward an unsafe action</p><ol>{result.assessment.attackChain.map((step, index) => <li key={`${step.stage}-${index}`}><span className="chain-index">{String(index + 1).padStart(2, '0')}</span><span><strong>{step.stage}</strong><q>{step.evidence}</q><small>{step.interpretation}</small></span></li>)}</ol></div>}</> : <><div className="score-row"><span>Pattern match score</span><strong>{result.score}<span> / 100</span></strong></div><div className="score-track" role="progressbar" aria-label="Pattern match score" aria-valuenow={result.score} aria-valuemin="0" aria-valuemax="100"><span className={`score-fill fill-${result.level.toLowerCase()}`} style={{ width: `${result.score}%` }} /></div><p className="score-note">A pattern match score is not the probability that a message is a scam.</p></>}
+                    {result.level === 'High' && (() => {
+                      const financialRisk = [...(result.categories || []), result.assessment?.scamType || ''].some((category) => /payment|upi|financial/i.test(category))
+                      return <div className="response-panel"><div><p className="result-kicker">RECOMMENDED RESPONSE</p><h3>{financialRisk ? 'If money or payment details were involved' : 'Secure the affected account or device'}</h3></div>{financialRisk ? <><p>If money has already been sent, contact your bank or payment provider using its official app or number, then report the financial fraud immediately.</p><div className="response-actions"><a href="tel:1930">Call India cyber fraud helpline: 1930</a><a href="https://www.cybercrime.gov.in/" target="_blank" rel="noreferrer">Open National Cyber Crime Reporting Portal</a></div></> : <p>Do not continue through the message. Open the service’s official app or website directly, secure the account, and contact its support channel if credentials or device access were shared.</p>}</div>
+                    })()}
+                    <div className="result-columns">
+                      <div><h3>Signals identified <span className="count-pill">{result.signals.length}</span></h3>{result.signals.length ? <ul className="signal-list">{result.signals.map((signal, index) => <li key={`${signal.name}-${index}`}><span className="signal-check" aria-hidden="true">!</span><span><strong>{signal.name}</strong>{signal.evidence && <small>Evidence: &quot;{signal.evidence}&quot;</small>}{signal.explanation && <small>{signal.explanation}</small>}{signal.points > 0 && <small>Rule score: +{signal.points}</small>}</span></li>)}</ul> : <p className="quiet-copy">No configured warning patterns matched.</p>}</div>
+                      <div className="advice-panel"><h3>What to do next</h3><ul>{result.advice.map((item) => <li key={item}>{item}</li>)}</ul></div>
+                    </div>
+                    <div className="result-tools"><span>Share this assessment with a trusted person or support team.</span><button type="button" onClick={() => copyAssessment(result)}>{copyState || 'Copy assessment'}</button></div>
+                    <p className="result-footnote">{result.mode === 'ai-assisted' ? 'AI analysis can miss context or make mistakes. Verify unexpected requests independently.' : 'This scan checks configured rules only. No matched pattern does not mean a message is safe.'}</p>
+                  </>}</section>
+              )}
+            </form>}
+            {activeTool === 'url' && <section className="url-tool" role="tabpanel" id="url-panel" aria-labelledby="url-tab url-tool-title">
+              <div><span className="section-kicker">URL CHECK</span><h3 id="url-tool-title">Check a link on its own</h3><p>Paste one complete web address. VirusTotal may look it up or submit it for scanning.</p></div>
+              <form onSubmit={handleCheckUrl} className="url-tool-form">
+                <label className="sr-only" htmlFor="url-input">URL to check</label>
+                <input id="url-input" type="url" inputMode="url" placeholder="https://example.com" value={urlInput} onChange={(event) => { setUrlInput(event.target.value); setUrlResult(null); setUrlError('') }} maxLength={2048} required />
+                <button type="submit" className="primary-button" disabled={urlChecking}>{urlChecking ? 'Checking…' : 'Check URL'} <span aria-hidden="true">↗</span></button>
+              </form>
+              <p className="url-disclosure">{config?.virusTotalAvailable ? <>The URL is sent to VirusTotal. Submitted or queried URLs are added to its community dataset. Don’t check private, confidential, or password-reset links. <a href="https://docs.virustotal.com/reference/scan-url" target="_blank" rel="noreferrer">VirusTotal data notice</a>.</> : <>URL checks need <code>VIRUSTOTAL_API_KEY</code> on the server.</>}</p>
+              {urlError && <p className="media-error" role="alert">{urlError}</p>}
+              {urlResult && urlResult.results.map((item, index) => <div className={`url-check-row url-check-${item.status} standalone-url-result`} key={`${item.url}-${index}`}><div><code>{item.url}</code><strong>{urlCheckLabels[item.status] || item.status}</strong>{Number.isInteger(item.detections) && <small>{item.malicious} malicious · {item.suspicious} suspicious · {item.total} vendors</small>}{item.message && <small>{item.message}</small>}</div>{item.reportUrl && <a href={item.reportUrl} target="_blank" rel="noreferrer">VirusTotal report ↗</a>}</div>)}
+              {urlResult?.results.some((item) => item.status === 'pending') && <p className="url-check-note">Scan submitted. Check the link again in about 30 seconds to see the report.</p>}
+            </section>}
+            {activeTool === 'media' && <section className="media-tool" role="tabpanel" id="media-panel" aria-labelledby="media-tab">
               <section className="media-upload" aria-labelledby="media-heading">
                 <div className="media-upload-heading"><div><span className="section-kicker">IMAGE &amp; VIDEO CHECK</span><h3 id="media-heading">Review a photo, poster, or video</h3><p>We’ll describe the content, read visible text, flag supported safety concerns, and estimate whether it looks AI-generated.</p></div>
                   <label className="secondary-button media-pick" htmlFor="media-file">{mediaFile ? 'Choose another file' : 'Choose media'}</label>
@@ -289,15 +363,6 @@ function App() {
                 {mediaError && <p className="media-error" role="alert">{mediaError}</p>}
                 <button type="button" className="primary-button media-review" onClick={handleAnalyzeMedia} disabled={!mediaFile || !mediaFrames.length || isAnalyzing || mediaPreparing}>{isAnalyzing && mediaFile ? 'Reviewing media…' : 'Review media'} <span aria-hidden="true">↗</span></button>
               </section>
-              <div className="form-footer">
-                <span className="char-count">{message.length.toLocaleString()} / 5,000</span>
-                <div className="actions">
-                  <button type="button" className="secondary-button" onClick={handleClear} disabled={isAnalyzing || (!message && !result && !mediaFile && !mediaResult && !mediaError)}>Clear</button>
-                  <button type="submit" className="primary-button" disabled={isAnalyzing}>{isAnalyzing ? 'Reviewing…' : <>Review message <span aria-hidden="true">↗</span></>}</button>
-                </div>
-              </div>
-              <p className="privacy" id="privacy-note"><span aria-hidden="true">Privacy</span> {config?.aiAssistedAvailable ? config.externalProvider === 'Groq' ? <>Message sent to ScamShield and Groq. Inference inputs and outputs are not retained by default, but may be temporarily retained for reliability or abuse investigations. <a href="https://console.groq.com/docs/your-data" target="_blank" rel="noreferrer">See Groq data handling</a>.</> : <>Message sent to ScamShield and Google Gemini. Interaction storage is disabled; Google abuse monitoring still applies. <a href="https://ai.google.dev/gemini-api/docs/zdr" target="_blank" rel="noreferrer">See Gemini data handling</a>.</> : <>Message analyzed by ScamShield rules. Message history is not saved.</>} {config?.virusTotalAvailable ? <>URLs in messages are automatically sent to VirusTotal for lookup or scanning. VirusTotal says submitted or queried URLs are added to its community dataset. Do not include private or password-reset links. The free Public API is for non-commercial use and limited to 4 requests per minute. <a href="https://docs.virustotal.com/reference/scan-url" target="_blank" rel="noreferrer">VirusTotal data notice</a>.</> : <>VirusTotal URL checks are not configured on this service.</>}</p>
-
               {mediaResult && <section className="results media-results" aria-live="polite" aria-atomic="true">
                 <div className="result-topline"><div><p className="result-kicker">GROQ VISION{mediaResult.mediaType === 'video' ? ' + WHISPER' : ''}</p><h2>Media assessment</h2></div><span className={`origin-badge origin-${mediaResult.authenticity.verdict}`}>{mediaOriginLabels[mediaResult.authenticity.verdict] || 'Origin unclear'} · {mediaResult.authenticity.confidence} confidence</span></div>
                 <p className="media-summary">{mediaResult.summary || 'No clear description was returned.'}</p>
@@ -309,36 +374,11 @@ function App() {
                 {mediaResult.metadataIndicators.length > 0 && <div className="media-result-block"><h3>Unverified metadata clues</h3><ul>{mediaResult.metadataIndicators.map((item, index) => <li key={index}>{item}</li>)}</ul><small>Metadata can be forged or copied; these markers are not proof of origin.</small></div>}
                 <p className="result-footnote">{mediaResult.authenticity.caveat} “No clear AI signs” does not mean the media is authentic. Video review only sees sampled frames and may miss content between them.</p>
               </section>}
-
-              {result && (
-                <section className={`results${result.error ? ' results-error' : ''}`} aria-live="polite" aria-atomic="true">
-                  {result.error ? <p className="error-message">{result.error}</p> : <>
-                    <div className="result-topline">
-                      <div>
-                        <p className="result-kicker">{result.mode === 'ai-assisted' ? `${(config?.externalProvider || 'AI').toUpperCase()} + RULE ENGINE` : 'RULE ENGINE'}</p>
-                        <h2>Your assessment</h2>
-                      </div>
-                      <div className={`risk-badge risk-${result.level.toLowerCase()}`}><span><small>RISK LEVEL</small><strong>{result.level}</strong></span></div>
-                    </div>
-                    {result.urlChecks && <section className="url-checks" aria-label="VirusTotal URL checks"><div className="url-checks-heading"><h3>VirusTotal URL checks</h3><span>{result.urlChecks.configured ? 'Automatic' : 'Not configured'}</span></div>{result.urlChecks.results.map((item, index) => <div className={`url-check-row url-check-${item.status}`} key={`${item.url}-${index}`}><div><code>{item.url}</code><strong>{urlCheckLabels[item.status] || item.status}</strong>{Number.isInteger(item.detections) && <small>{item.malicious} malicious · {item.suspicious} suspicious · {item.total} vendors</small>}{item.message && <small>{item.message}</small>}</div>{item.reportUrl && <a href={item.reportUrl} target="_blank" rel="noreferrer">VirusTotal report ↗</a>}</div>)}{result.urlChecks.results.some((item) => ['malicious', 'suspicious'].includes(item.status)) && <p className="url-check-note">VirusTotal findings affect the overall risk level. The pattern match score reflects ScamShield rules only.</p>}{result.urlChecks.skipped > 0 && <p className="url-check-note">{result.urlChecks.skipped} additional link{result.urlChecks.skipped === 1 ? '' : 's'} not checked (maximum 3 per message).</p>}{result.urlChecks.results.some((item) => item.status === 'not_submitted') && <p className="url-check-note">Only one new URL is submitted for scanning per message to stay within the free API quota. Review the message again later to update pending results.</p>}{result.urlChecks.results.some((item) => item.status === 'pending') && <p className="url-check-note">A new URL was submitted for scanning. Review this message again in about 30 seconds for the report.</p>}{!result.urlChecks.configured && <p className="url-check-note">Add <code>VIRUSTOTAL_API_KEY</code> to the server environment to enable automatic checks.</p>}</section>}
-                    {result.mode === 'ai-assisted' ? <><div className="assessment-summary"><strong>{result.assessment?.scamType}</strong><p>{result.assessment?.summary}</p><small>AI assessment may be wrong. Risk level is not a probability.</small></div>{result.assessment?.attackChain?.length > 0 && <div className="attack-chain"><h3>Social engineering sequence</h3><p className="chain-intro">How the conversation may be building toward an unsafe action</p><ol>{result.assessment.attackChain.map((step, index) => <li key={`${step.stage}-${index}`}><span className="chain-index">{String(index + 1).padStart(2, '0')}</span><span><strong>{step.stage}</strong><q>{step.evidence}</q><small>{step.interpretation}</small></span></li>)}</ol></div>}</> : <><div className="score-row"><span>Pattern match score</span><strong>{result.score}<span> / 100</span></strong></div><div className="score-track" role="progressbar" aria-label="Pattern match score" aria-valuenow={result.score} aria-valuemin="0" aria-valuemax="100"><span className={`score-fill fill-${result.level.toLowerCase()}`} style={{ width: `${result.score}%` }} /></div><p className="score-note">A pattern match score is not the probability that a message is a scam.</p></>}
-                    {result.level === 'High' && (() => {
-                      const financialRisk = [...(result.categories || []), result.assessment?.scamType || ''].some((category) => /payment|upi|financial/i.test(category))
-                      return <div className="response-panel"><div><p className="result-kicker">RECOMMENDED RESPONSE</p><h3>{financialRisk ? 'If money or payment details were involved' : 'Secure the affected account or device'}</h3></div>{financialRisk ? <><p>If money has already been sent, contact your bank or payment provider using its official app or number, then report the financial fraud immediately.</p><div className="response-actions"><a href="tel:1930">Call India cyber fraud helpline: 1930</a><a href="https://www.cybercrime.gov.in/" target="_blank" rel="noreferrer">Open National Cyber Crime Reporting Portal</a></div></> : <p>Do not continue through the message. Open the service’s official app or website directly, secure the account, and contact its support channel if credentials or device access were shared.</p>}</div>
-                    })()}
-                    <div className="result-columns">
-                      <div><h3>Signals identified <span className="count-pill">{result.signals.length}</span></h3>{result.signals.length ? <ul className="signal-list">{result.signals.map((signal, index) => <li key={`${signal.name}-${index}`}><span className="signal-check" aria-hidden="true">!</span><span><strong>{signal.name}</strong>{signal.evidence && <small>Evidence: &quot;{signal.evidence}&quot;</small>}{signal.explanation && <small>{signal.explanation}</small>}{signal.points > 0 && <small>Rule score: +{signal.points}</small>}</span></li>)}</ul> : <p className="quiet-copy">No configured warning patterns matched.</p>}</div>
-                      <div className="advice-panel"><h3>What to do next</h3><ul>{result.advice.map((item) => <li key={item}>{item}</li>)}</ul></div>
-                    </div>
-                    <div className="result-tools"><span>Share this assessment with a trusted person or support team.</span><button type="button" onClick={() => copyAssessment(result)}>{copyState || 'Copy assessment'}</button></div>
-                    <p className="result-footnote">{result.mode === 'ai-assisted' ? 'AI analysis can miss context or make mistakes. Verify unexpected requests independently.' : 'This scan checks configured rules only. No matched pattern does not mean a message is safe.'}</p>
-                  </>}</section>
-              )}
-            </form>
+            </section>}
           </section>
         </div>
 
-        {!result && <section className="examples" aria-label="Try a sample message"><div><span className="section-kicker">TRY A SAMPLE</span><p>Explore the prototype with a scenario</p></div><div className="example-list">{examples.map((example) => <button type="button" key={example.label} onClick={() => loadExample(example)}>{example.label}<span aria-hidden="true">↗</span></button>)}</div></section>}
+        {activeTool === 'message' && !result && <section className="examples" aria-label="Try a sample message"><div><span className="section-kicker">TRY A SAMPLE</span><p>Explore the prototype with a scenario</p></div><div className="example-list">{examples.map((example) => <button type="button" key={example.label} onClick={() => loadExample(example)}>{example.label}<span aria-hidden="true">↗</span></button>)}</div></section>}
 
         <aside className="reminder"><span className="reminder-icon" aria-hidden="true">✓</span><p><strong>When in doubt, verify independently.</strong> Contact the person or organization using details you already trust — not details in the message.</p></aside>
       </main>

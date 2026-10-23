@@ -8,7 +8,7 @@ import { analyzeMessage } from '../shared/detector.js'
 import { classifyMessageWithGemini } from './gemini-classifier.js'
 import { classifyMessageWithGroq } from './groq-classifier.js'
 import { analyzeUploadedMedia } from './media-analyzer.js'
-import { checkMessageUrls } from './virustotal.js'
+import { checkSingleUrl } from './virustotal.js'
 
 const projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const staticRoot = resolve(projectRoot, 'frontend', 'dist')
@@ -230,6 +230,35 @@ const server = createServer(async (request, response) => {
       })
       return
     }
+    if (pathname === '/api/check-url' && request.method === 'POST') {
+      const limit = consumeRateLimit(request)
+      response.setHeader('RateLimit-Limit', String(rateLimit))
+      response.setHeader('RateLimit-Remaining', String(limit.remaining))
+      response.setHeader('RateLimit-Reset', String(Math.ceil(limit.resetAt / 1000)))
+      if (!limit.allowed) {
+        request.resume()
+        writeJson(response, 429, { error: { code: 'RATE_LIMITED', message: 'Too many checks. Wait a moment and try again.', requestId } }, { 'Retry-After': String(Math.ceil((limit.resetAt - Date.now()) / 1000)) })
+        return
+      }
+      if (!String(request.headers['content-type'] || '').toLowerCase().startsWith('application/json')) {
+        request.resume()
+        writeJson(response, 415, { error: { code: 'UNSUPPORTED_MEDIA_TYPE', message: 'Send the request as JSON.', requestId } })
+        return
+      }
+      try {
+        const body = await readJson(request)
+        if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some((key) => key !== 'url')) {
+          writeJson(response, 400, { error: { code: 'INVALID_INPUT', message: 'Provide a URL to check.', requestId } })
+          return
+        }
+        const urlChecks = await checkSingleUrl(body.url, process.env.VIRUSTOTAL_API_KEY)
+        writeJson(response, 200, { requestId, urlChecks })
+      } catch (error) {
+        const code = error.status === 413 ? 'TOO_LARGE' : error.status === 429 ? 'RATE_LIMITED' : 'INVALID_INPUT'
+        writeJson(response, error.status || 400, { error: { code, message: error.message || 'The URL could not be checked.', requestId } })
+      }
+      return
+    }
     if (pathname === '/api/analyze-media' && request.method === 'POST') {
       const limit = consumeMediaRateLimit(request)
       response.setHeader('RateLimit-Limit', String(mediaRateLimit))
@@ -339,7 +368,6 @@ const server = createServer(async (request, response) => {
           return
         }
         let analysis = { ...analyzeMessage(message), mode: 'rules' }
-        const urlChecksPromise = checkMessageUrls(message, process.env.VIRUSTOTAL_API_KEY)
         if (body.useAiAnalysis === true) {
           const assessment = aiProvider === 'gemini'
             ? await classifyMessageWithGemini(message, { apiKey: process.env.GEMINI_API_KEY, model: geminiModel })
@@ -367,40 +395,6 @@ const server = createServer(async (request, response) => {
               return true
             }),
             advice: [...new Set([...assessment.advice, ...analysis.advice])]
-          }
-        }
-        const urlChecks = await urlChecksPromise
-        if (urlChecks) {
-          const urlSignals = urlChecks.results.flatMap((result) => {
-            if (result.status === 'malicious') return [{
-              name: 'VirusTotal flagged this URL as malicious',
-              category: 'Malicious URL',
-              points: 0,
-              evidence: result.url,
-              explanation: `${result.malicious} of ${result.total} security vendors flagged this link as malicious.`,
-              advice: 'Do not open this link. If you already entered information, secure the affected account and contact the service through its official channel.'
-            }]
-            if (result.status === 'suspicious') return [{
-              name: 'VirusTotal flagged this URL as suspicious',
-              category: 'Suspicious URL',
-              points: 0,
-              evidence: result.url,
-              explanation: `${result.suspicious} security vendors flagged this link as suspicious${result.total ? ` out of ${result.total}` : ''}.`,
-              advice: 'Avoid opening this link. Verify the destination through the service’s official app or website.'
-            }]
-            return []
-          })
-          const vtLevel = urlSignals.some((signal) => signal.category === 'Malicious URL')
-            ? 'High'
-            : urlSignals.length ? 'Medium' : analysis.level
-          const levelRank = { Low: 0, Medium: 1, High: 2 }
-          analysis = {
-            ...analysis,
-            level: levelRank[vtLevel] > levelRank[analysis.level] ? vtLevel : analysis.level,
-            categories: [...new Set([...analysis.categories, ...urlSignals.map((signal) => signal.category)])],
-            signals: [...analysis.signals, ...urlSignals],
-            advice: [...new Set([...analysis.advice, ...urlSignals.map((signal) => signal.advice)])],
-            urlChecks
           }
         }
         writeJson(response, 200, { requestId, analysis })

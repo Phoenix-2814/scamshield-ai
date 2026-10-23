@@ -176,6 +176,22 @@ footer { display: flex; justify-content: space-between; padding: 16px max(5%, ca
 .mode-pill span { width: 6px; height: 6px; background: #879e91; box-shadow: 0 0 0 3px #edf2ee; }
 .mode-ai { border-color: #d9eee2; background: #eff8f1; color: #347252; }
 .mode-ai span { background: #30a269; box-shadow: 0 0 0 3px #dff1e5; }
+.tool-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 0 0 21px; }
+.tool-tabs button { display: grid; gap: 5px; padding: 12px; border: 1px solid #e3ebe5; border-radius: 9px; background: #fbfcfa; color: #62736a; text-align: left; cursor: pointer; }
+.tool-tabs button.active { border-color: #85b69b; background: #eff7f1; box-shadow: 0 0 0 2px rgba(39, 126, 92, .07); color: #176751; }
+.tool-tabs strong { font-size: 11px; }
+.tool-tabs small { color: #839188; font-size: 9px; line-height: 1.4; }
+.tool-tabs button.active small { color: #597a67; }
+.url-tool { padding: 18px; border: 1px solid #e3ebe5; border-radius: 11px; background: #f8fbf8; }
+.url-tool > div h3 { margin: 5px 0; color: #2d453a; font-size: 14px; }
+.url-tool > div p { margin: 0; color: #819089; font-size: 10px; line-height: 1.6; }
+.url-tool-form { display: flex; gap: 9px; margin-top: 15px; }
+.url-tool-form input { min-width: 0; flex: 1; padding: 11px 12px; border: 1px solid #dce6df; border-radius: 7px; background: #fff; color: #263c34; font-size: 11px; }
+.url-tool-form input:focus { border-color: #61a888; outline: 0; box-shadow: 0 0 0 4px rgba(39, 126, 92, .09); }
+.url-disclosure { margin: 11px 0 0; color: #819089; font-size: 9px; line-height: 1.65; }
+.url-disclosure a { color: #277b62; }
+.standalone-url-result { margin-top: 15px; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .analyzer form { margin: 0; }
 .field-heading { align-items: center; margin: 0 1px 9px; }
 .field-heading label { color: #31463e; font-size: 11px; }
@@ -265,6 +281,10 @@ footer { justify-content: space-between; gap: 16px; padding: 17px max(5%, calc((
   .story-steps { grid-template-columns: 1fr; gap: 12px; padding-top: 17px; }
   .story-steps > div { align-items: center; }
   .analyzer { padding: 19px 16px; border-radius: 14px; }
+  .tool-tabs { gap: 5px; }
+  .tool-tabs button { padding: 9px 7px; }
+  .tool-tabs strong { font-size: 10px; }
+  .tool-tabs small { font-size: 8px; }
   .analyzer-heading { flex-direction: column; margin-bottom: 18px; }
   .analyzer-heading h2 { font-size: 19px; }
   .analyzer textarea { min-height: 145px; }
@@ -272,6 +292,7 @@ footer { justify-content: space-between; gap: 16px; padding: 17px max(5%, calc((
   .form-footer { align-items: flex-start; gap: 12px; flex-direction: column; }
   .actions { width: 100%; }
   .primary-button { flex: 1; justify-content: center; }
+  .url-tool-form { align-items: stretch; flex-direction: column; }
   .examples { align-items: flex-start; flex-direction: column; padding: 15px; }
   .example-list { justify-content: flex-start; }
   .reminder { align-items: flex-start; }

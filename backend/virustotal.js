@@ -1,29 +1,27 @@
-import { extractUrls } from '../shared/detector.js'
-
-const maxUrlsPerMessage = 3
 const cacheTtlMs = 15 * 60 * 1000
 const cache = new Map()
 const requestTimes = []
 const requestsPerMinute = Number.parseInt(process.env.VIRUSTOTAL_REQUESTS_PER_MINUTE || '4', 10)
 
-export async function checkMessageUrls(message, apiKey, { timeoutMs = 8000 } = {}) {
-  const urls = extractUrls(message)
-  if (!urls.length) return null
-  if (!apiKey) return {
-    configured: false,
-    results: urls.slice(0, maxUrlsPerMessage).map((url) => ({ url: safeDisplayUrl(url), status: 'not_configured' })),
-    skipped: Math.max(0, urls.length - maxUrlsPerMessage)
+export async function checkSingleUrl(input, apiKey, { timeoutMs = 8000 } = {}) {
+  if (typeof input !== 'string' || input.length > 2048) {
+    const error = new Error('Enter a valid web URL (up to 2,048 characters).')
+    error.status = 400
+    throw error
   }
-
-  const selected = urls.slice(0, maxUrlsPerMessage)
-  const results = []
-  let scanSubmitted = false
-  for (const url of selected) {
-    const result = await checkUrl(url, apiKey, timeoutMs, !scanSubmitted)
-    results.push(result.result)
-    if (result.submitted || result.result.status === 'pending') scanSubmitted = true
+  let parsed
+  try {
+    parsed = new URL(input.trim())
+    if (!['http:', 'https:'].includes(parsed.protocol) || !parsed.hostname || parsed.username || parsed.password) throw new Error('invalid')
+  } catch {
+    const error = new Error('Enter a complete http:// or https:// URL.')
+    error.status = 400
+    throw error
   }
-  return { configured: true, results, skipped: Math.max(0, urls.length - selected.length) }
+  const url = parsed.href
+  if (!apiKey) return { configured: false, results: [{ url: safeDisplayUrl(url), status: 'not_configured' }] }
+  const checked = await checkUrl(url, apiKey, timeoutMs, true)
+  return { configured: true, results: [checked.result] }
 }
 
 async function checkUrl(url, apiKey, timeoutMs, allowSubmit) {
