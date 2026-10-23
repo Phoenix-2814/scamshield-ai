@@ -6,14 +6,24 @@ import { extname, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { analyzeMessage } from '../shared/detector.js'
 import { classifyMessageWithGemini } from './gemini-classifier.js'
+import { classifyMessageWithGrok } from './grok-classifier.js'
 
 const projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const staticRoot = resolve(projectRoot, 'frontend', 'dist')
 const isProduction = process.env.NODE_ENV === 'production'
-const aiProvider = process.env.SCAMSHIELD_AI_PROVIDER || 'rules'
-if (!['rules', 'gemini'].includes(aiProvider)) throw new Error('SCAMSHIELD_AI_PROVIDER must be rules or gemini.')
-if (aiProvider === 'gemini' && !process.env.GEMINI_API_KEY) throw new Error('SCAMSHIELD_AI_PROVIDER=gemini requires GEMINI_API_KEY.')
+const requestedAiProvider = process.env.SCAMSHIELD_AI_PROVIDER || 'rules'
+if (!['rules', 'gemini', 'xai'].includes(requestedAiProvider)) throw new Error('SCAMSHIELD_AI_PROVIDER must be rules, gemini, or xai.')
+const providerKeyAvailable = requestedAiProvider === 'gemini'
+  ? Boolean(process.env.GEMINI_API_KEY)
+  : requestedAiProvider === 'xai'
+    ? Boolean(process.env.XAI_API_KEY)
+    : true
+const aiProvider = providerKeyAvailable ? requestedAiProvider : 'rules'
+if (!providerKeyAvailable) console.warn(`SCAMSHIELD_AI_PROVIDER=${requestedAiProvider} has no API key configured; using rules mode.`)
 const geminiModel = process.env.GEMINI_MODEL || 'gemini-3.8-flash'
+const grokModel = process.env.GROK_MODEL || 'grok-4.7'
+const aiEnabled = aiProvider !== 'rules'
+const externalProvider = aiProvider === 'gemini' ? 'Gemini' : aiProvider === 'xai' ? 'Grok' : null
 const port = readInteger(process.env.PORT, 8787, 1, 65535)
 const host = process.env.HOST || '127.0.0.1'
 const maxBodyBytes = readInteger(process.env.MAX_BODY_BYTES, 24000, 1024, 65536)
@@ -174,9 +184,9 @@ const server = createServer(async (request, response) => {
     }
     if (pathname === '/api/config' && request.method === 'GET') {
       writeJson(response, 200, {
-        analysisModes: aiProvider === 'gemini' ? ['rules', 'ai-assisted'] : ['rules'],
-        aiAssistedAvailable: aiProvider === 'gemini',
-        externalProvider: aiProvider === 'gemini' ? 'Gemini' : null,
+        analysisModes: aiEnabled ? ['rules', 'ai-assisted'] : ['rules'],
+        aiAssistedAvailable: aiEnabled,
+        externalProvider,
         requestId
       })
       return
@@ -221,11 +231,13 @@ const server = createServer(async (request, response) => {
         }
         let analysis = { ...analyzeMessage(message), mode: 'rules' }
         if (body.useAiAnalysis === true) {
-          if (aiProvider !== 'gemini') {
+          if (!aiEnabled) {
             writeJson(response, 503, { error: { code: 'AI_NOT_CONFIGURED', message: 'AI-assisted analysis is not configured on this service.', requestId } })
             return
           }
-          const assessment = await classifyMessageWithGemini(message, { apiKey: process.env.GEMINI_API_KEY, model: geminiModel })
+          const assessment = aiProvider === 'gemini'
+            ? await classifyMessageWithGemini(message, { apiKey: process.env.GEMINI_API_KEY, model: geminiModel })
+            : await classifyMessageWithGrok(message, { apiKey: process.env.XAI_API_KEY, model: grokModel })
           const aiSignals = assessment.signals.map((signal) => ({
             name: signal.name,
             category: assessment.scamType,
@@ -255,9 +267,9 @@ const server = createServer(async (request, response) => {
       } catch (error) {
         const code = error.status === 413 ? 'BODY_TOO_LARGE' : error.status === 503 ? 'AI_PROVIDER_ERROR' : 'INVALID_JSON'
         if (error.providerStatus) {
-          console.error(`[${requestId}] Gemini request failed: HTTP ${error.providerStatus}${error.providerCode ? ` code=${error.providerCode}` : ''}`)
+          console.error(`[${requestId}] ${externalProvider || 'AI provider'} request failed: HTTP ${error.providerStatus}${error.providerCode ? ` code=${error.providerCode}` : ''}`)
         } else if (error.providerFailure) {
-          console.error(`[${requestId}] Gemini request failed: ${error.providerFailure}`)
+          console.error(`[${requestId}] ${externalProvider || 'AI provider'} request failed: ${error.providerFailure}`)
         }
         writeJson(response, error.status || 400, { error: { code, message: error.message, requestId } })
       }

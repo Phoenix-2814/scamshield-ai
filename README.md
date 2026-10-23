@@ -1,6 +1,6 @@
 # ScamShield
 
-ScamShield is a scam-safety product prototype focused on analyzing intent and explaining warning signs across suspicious messages and conversation transcripts. The web app submits content to a same-origin Node API. Rules-based analysis is available by default; when the operator configures Gemini, semantic analysis runs automatically.
+ScamShield is a scam-safety product prototype focused on analyzing intent and explaining warning signs across suspicious messages and conversation transcripts. The web app submits content to a same-origin Node API. Rules-based analysis is available by default; when the operator configures Grok or Gemini, semantic analysis runs automatically.
 
 ## Run locally
 
@@ -20,11 +20,19 @@ Open the Vite URL shown in the terminal. The dev command starts both the API on 
 
 Requests must be JSON. Messages are limited to 5,000 characters. The API enforces a request body limit, applies a small per-process rate limit, sends browser security headers, and does not log message contents. The rate limiter is an in-memory prototype guard; it resets at restart and is not suitable across multiple replicas.
 
-## Optional Gemini analysis
+## Optional AI analysis
 
-Rules-based analysis is the default. To enable Gemini locally, copy `.env.example` to `.env`, uncomment `SCAMSHIELD_AI_PROVIDER` and `GEMINI_MODEL`, and set your key in `GEMINI_API_KEY`. The `npm run dev` and `npm start` commands load the root `.env` file. Keep the key server-side; never put it in frontend code or a `VITE_` variable.
+Rules-based analysis is the default. To enable Grok locally, copy `.env.example` to `.env`, uncomment the Grok settings, and set your xAI key in `XAI_API_KEY`. Alternatively, uncomment the Gemini settings and set `GEMINI_API_KEY`. The `npm run dev` and `npm start` commands load the root `.env` file. Keep provider keys server-side; never put them in frontend code or a `VITE_` variable.
 
-The equivalent **server** environment settings are:
+Grok settings:
+
+```text
+SCAMSHIELD_AI_PROVIDER=xai
+XAI_API_KEY=<your server-side API key>
+GROK_MODEL=grok-4.7
+```
+
+Gemini settings:
 
 ```text
 SCAMSHIELD_AI_PROVIDER=gemini
@@ -32,7 +40,7 @@ GEMINI_API_KEY=<your server-side API key>
 GEMINI_MODEL=gemini-3.8-flash
 ```
 
-Never put the API key in frontend code or a `VITE_` variable. When Gemini is configured, each analysis is sent to Google Gemini. The interface discloses this and provides a link to [Gemini API data handling](https://ai.google.dev/gemini-api/docs/zdr). ScamShield sends `store: false` to opt out of saved interaction state; Google's abuse monitoring and other data policies still apply. If you do not configure the provider, only the rules-based scan is available.
+When Grok is configured, each analysis is sent to xAI. xAI states that API requests and responses may be retained for up to 30 days for abuse auditing and are not used to train models without permission; teams can enable Zero Data Retention. The interface discloses the provider and links to [xAI API data handling](https://docs.x.ai/developers/faq/security). Gemini analyses are sent to Google; the interface links to [Gemini API data handling](https://ai.google.dev/gemini-api/docs/zdr). If no AI provider is configured, only the rules-based scan is available.
 
 ## Run in a container
 
@@ -58,7 +66,7 @@ Render's free web services sleep after 15 minutes without traffic and can take a
 
 ## Current detection scope
 
-The shared rule engine is in `shared/detector.js`. It checks for credential requests, pressure tactics, payment fees, fake KYC, UPI collect/PIN-to-receive language, job-fee lures, remote-access requests, prize lures, and a small set of suspicious URL traits. Gemini can analyze pasted conversation transcripts for a supported social-engineering sequence and quotes matching evidence. High-risk results include account or India-specific financial-fraud response guidance, and users can copy an assessment to share with a trusted contact. Neither mode resolves redirects, queries live threat feeds, or validates senders. Scores and model risk labels are indicators, not proof or probabilities. A low result does not prove a message is safe.
+The shared rule engine is in `shared/detector.js`. It checks for credential requests, pressure tactics, payment fees, fake KYC, UPI collect/PIN-to-receive language, job-fee lures, remote-access requests, prize lures, and a small set of suspicious URL traits. Grok or Gemini can analyze pasted conversation transcripts for a supported social-engineering sequence and quotes matching evidence. High-risk results include account or India-specific financial-fraud response guidance, and users can copy an assessment to share with a trusted contact. Neither mode resolves redirects, queries live threat feeds, or validates senders. Scores and model risk labels are indicators, not proof or probabilities. A low result does not prove a message is safe.
 
 ## Production work still required
 

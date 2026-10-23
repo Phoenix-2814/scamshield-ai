@@ -114,7 +114,7 @@ function App() {
           <section className="analyzer" id="analyzer">
             <div className="analyzer-heading">
               <div><span className="section-kicker">MESSAGE CHECK</span><h2>What would you like to review?</h2></div>
-              <span className={`mode-pill${config?.aiAssistedAvailable ? ' mode-ai' : ''}`}><span />{config?.aiAssistedAvailable ? 'Gemini assisted' : 'Rules-based'}</span>
+              <span className={`mode-pill${config?.aiAssistedAvailable ? ' mode-ai' : ''}`}><span />{config?.aiAssistedAvailable ? `${config.externalProvider} assisted` : 'Rules-based'}</span>
             </div>
             <form onSubmit={handleAnalyze}>
               <div className="field-heading">
@@ -138,14 +138,14 @@ function App() {
                   <button type="submit" className="primary-button" disabled={isAnalyzing}>{isAnalyzing ? 'Reviewing…' : <>Review message <span aria-hidden="true">↗</span></>}</button>
                 </div>
               </div>
-              <p className="privacy" id="privacy-note"><span aria-hidden="true">Privacy</span> {config?.aiAssistedAvailable ? <>Message sent to ScamShield and Google Gemini. Interaction storage is disabled; Google abuse monitoring still applies. <a href="https://ai.google.dev/gemini-api/docs/zdr" target="_blank" rel="noreferrer">See Gemini data handling</a>.</> : <>Message analyzed by ScamShield rules. Message history is not saved.</>}</p>
+              <p className="privacy" id="privacy-note"><span aria-hidden="true">Privacy</span> {config?.aiAssistedAvailable ? config.externalProvider === 'Grok' ? <>Message sent to ScamShield and xAI Grok. xAI may retain API requests and responses for up to 30 days for abuse auditing; it says it does not train on API data without permission. <a href="https://docs.x.ai/developers/faq/security" target="_blank" rel="noreferrer">See xAI API data handling</a>.</> : <>Message sent to ScamShield and Google Gemini. Interaction storage is disabled; Google abuse monitoring still applies. <a href="https://ai.google.dev/gemini-api/docs/zdr" target="_blank" rel="noreferrer">See Gemini data handling</a>.</> : <>Message analyzed by ScamShield rules. Message history is not saved.</>}</p>
 
               {result && (
                 <section className={`results${result.error ? ' results-error' : ''}`} aria-live="polite" aria-atomic="true">
                   {result.error ? <p className="error-message">{result.error}</p> : <>
                     <div className="result-topline">
                       <div>
-                        <p className="result-kicker">{result.mode === 'ai-assisted' ? 'GEMINI + RULE ENGINE' : 'RULE ENGINE'}</p>
+                        <p className="result-kicker">{result.mode === 'ai-assisted' ? `${(config?.externalProvider || 'AI').toUpperCase()} + RULE ENGINE` : 'RULE ENGINE'}</p>
                         <h2>Your assessment</h2>
                       </div>
                       <div className={`risk-badge risk-${result.level.toLowerCase()}`}><span><small>RISK LEVEL</small><strong>{result.level}</strong></span></div>
