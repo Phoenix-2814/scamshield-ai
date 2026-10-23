@@ -6,9 +6,44 @@ const visionPrompt = `You are ScamShield's media safety reviewer. Analyze visibl
 
 const maxMediaBytes = 20 * 1024 * 1024
 const maxFrameBytes = 3 * 1024 * 1024
-const knownGeneratorMarkers = [
-  'Stable Diffusion', 'Midjourney', 'DALL-E', 'Adobe Firefly', 'ComfyUI',
-  'Automatic1111', 'InvokeAI', 'Leonardo.ai', 'Ideogram', 'Runway', 'Pika'
+const knownGeneratorDefinitions = [
+  // Audio & Voice Generators
+  { name: 'ElevenLabs', patterns: ['elevenlabs', 'eleven labs', 'eleven_multilingual', 'eleven_monolingual', 'eleven_turbo', 'elevenmusic'] },
+  { name: 'Suno AI', patterns: ['suno', 'suno.ai', 'chirp v', 'suno chirp'] },
+  { name: 'Udio', patterns: ['udio', 'udio.com'] },
+  { name: 'Bark (Suno)', patterns: ['suno-bark', 'suno bark', 'bark-tts'] },
+  { name: 'Tortoise TTS', patterns: ['tortoise-tts', 'tortoise tts'] },
+  { name: 'VoiceAI', patterns: ['voiceai', 'voice.ai'] },
+  { name: 'RVC (Voice Clone)', patterns: ['rvc v2', 'retrieval-based-voice', 'rvc_'] },
+  { name: 'Murf AI', patterns: ['murf.ai', 'murf ai', 'murf studio'] },
+  { name: 'Synthesia', patterns: ['synthesia'] },
+  { name: 'PlayHT', patterns: ['play.ht', 'playht'] },
+  { name: 'Resemble AI', patterns: ['resemble.ai', 'resemble ai'] },
+  { name: 'Descript / Overdub', patterns: ['descript', 'overdub'] },
+  { name: 'Speechify', patterns: ['speechify'] },
+  { name: 'Lovo AI', patterns: ['lovo.ai', 'lovo ai', 'genny'] },
+  { name: 'Coqui / XTTS', patterns: ['coqui', 'xtts', 'tts_models'] },
+  { name: 'OpenAI Voice Engine', patterns: ['openai-tts', 'tts-1', 'tts-1-hd'] },
+  // Image & Video Generators
+  { name: 'Stable Diffusion', patterns: ['stable diffusion', 'stablediffusion', 'diffusers', 'novelai'] },
+  { name: 'Midjourney', patterns: ['midjourney'] },
+  { name: 'DALL-E', patterns: ['dall-e', 'dalle'] },
+  { name: 'Adobe Firefly', patterns: ['adobe firefly', 'firefly'] },
+  { name: 'ComfyUI', patterns: ['comfyui'] },
+  { name: 'Automatic1111', patterns: ['automatic1111', 'a1111'] },
+  { name: 'InvokeAI', patterns: ['invokeai'] },
+  { name: 'Leonardo.ai', patterns: ['leonardo.ai', 'leonardo ai'] },
+  { name: 'Ideogram', patterns: ['ideogram'] },
+  { name: 'Runway', patterns: ['runwayml', 'runway gen-2', 'runway gen-3'] },
+  { name: 'Pika', patterns: ['pika labs', 'pika.art', 'pikalabs'] },
+  { name: 'Sora', patterns: ['openai sora', 'sora'] },
+  { name: 'HeyGen', patterns: ['heygen'] },
+  { name: 'D-ID', patterns: ['d-id', 'de-identification'] },
+  { name: 'Kling AI', patterns: ['kling ai', 'klingai'] },
+  { name: 'Luma Dream Machine', patterns: ['luma ai', 'dream machine'] },
+  { name: 'Hailuo AI (MiniMax)', patterns: ['hailuo', 'minimax'] },
+  { name: 'Flux', patterns: ['flux.1', 'black forest labs'] },
+  { name: 'DeepFake / FaceSwap', patterns: ['deepfake', 'faceswap', 'roop', 'facefusion', 'deepfacelab'] }
 ]
 
 export async function analyzeUploadedMedia({ apiKey, bytes, mimeType, fileName, frames, duration }) {
@@ -26,7 +61,7 @@ export async function analyzeUploadedMedia({ apiKey, bytes, mimeType, fileName, 
     throw providerError('The media preview could not be prepared. Re-select the file and try again.', 400)
   }
 
-  const metadataIndicators = inspectEmbeddedMarkers(bytes)
+  const metadataIndicators = inspectEmbeddedMarkers(bytes, fileName)
   const mediaType = isAudio ? 'audio' : isVideo ? 'video' : 'image'
   const [vision, transcript, aiDetection, provenance] = await Promise.all([
     isAudio ? Promise.resolve(null) : analyzeFrames(frames, metadataIndicators, apiKey),
@@ -42,36 +77,64 @@ export async function analyzeUploadedMedia({ apiKey, bytes, mimeType, fileName, 
   }
 
   const transcriptSignals = isAudio && transcript.text ? analyzeMessage(transcript.text).signals : []
+  const hasAiMarkers = metadataIndicators.length > 0
+
+  const verdict = aiDetection.status === 'completed'
+    ? (hasAiMarkers && aiDetection.label !== 'likely_ai_generated' ? 'likely_ai_generated' : aiDetection.label)
+    : hasAiMarkers
+      ? 'likely_ai_generated'
+      : isAudio || vision?.origin_verdict === 'no_clear_ai_signs' ? 'unclear' : (vision?.origin_verdict || 'unclear')
+
+  const confidence = aiDetection.status === 'completed'
+    ? aiDetection.label === 'inconclusive' ? 'low' : 'medium'
+    : hasAiMarkers
+      ? 'high'
+      : isAudio || vision?.origin_verdict === 'no_clear_ai_signs' ? 'low' : (vision?.origin_confidence || 'low')
+
+  const reasons = [
+    ...(hasAiMarkers ? [`AI tool signature / metadata identified: ${metadataIndicators.join(', ')}`] : []),
+    ...(isAudio ? [] : cleanList(vision?.origin_reasons, 8, 300))
+  ]
+
+  const cleanedTranscript = (transcript.text || '').trim()
+  const hasSpokenWords = cleanedTranscript.length > 1 && cleanedTranscript !== '.'
+
+  const summary = isAudio
+    ? hasAiMarkers
+      ? `Likely AI-generated audio. Found signature matching ${metadataIndicators.join(', ')}.`
+      : hasSpokenWords
+        ? aiDetection.status === 'completed'
+          ? 'Speech was transcribed and checked for AI speech patterns.'
+          : 'Speech was transcribed. No common AI markers were found in file metadata.'
+        : 'Audio clip analyzed. No clear speech or scam language detected.'
+    : hasAiMarkers
+      ? `Likely AI-generated media. Found digital generator markers from ${metadataIndicators.join(', ')}.`
+      : cleanText(vision?.summary, 1000)
+
   return {
     mediaType: isAudio ? 'audio' : isVideo ? 'video' : 'image',
-    summary: isAudio
-      ? transcript.text ? aiDetection.status === 'completed' ? 'Speech was transcribed. Scam-language checks use the transcript; the separate AI-speech score appears below.' : 'Speech was transcribed. Scam-language checks use the transcript; voice origin could not be estimated in this review.' : 'Audio transcription did not return readable speech.'
-      : cleanText(vision.summary, 1000),
-    visibleText: isAudio ? [] : cleanList(vision.visible_text, 30, 500),
-    claims: isAudio ? [] : cleanList(vision.claims, 12, 400),
+    summary,
+    visibleText: isAudio ? [] : cleanList(vision?.visible_text, 30, 500),
+    claims: isAudio ? [] : cleanList(vision?.claims, 12, 400),
     safetyConcerns: isAudio
       ? transcriptSignals.map((signal) => `${signal.name}${signal.evidence ? `: "${signal.evidence}"` : ''}`)
-      : cleanList(vision.safety_concerns, 12, 400),
-    visualChecks: isAudio ? {} : cleanVisualChecks(vision.visual_checks),
+      : cleanList(vision?.safety_concerns, 12, 400),
+    visualChecks: isAudio ? {} : cleanVisualChecks(vision?.visual_checks),
     authenticity: {
-      verdict: aiDetection.status === 'completed'
-        ? aiDetection.label
-        : isAudio || vision.origin_verdict === 'no_clear_ai_signs' ? 'unclear' : vision.origin_verdict,
-      confidence: aiDetection.status === 'completed'
-        ? aiDetection.label === 'inconclusive' ? 'low' : 'medium'
-        : isAudio || vision.origin_verdict === 'no_clear_ai_signs' ? 'low' : vision.origin_confidence,
-      reasons: isAudio ? [] : cleanList(vision.origin_reasons, 8, 300),
-      caveat: isAudio
-        ? aiDetection.status === 'completed'
-          ? 'The AI-speech score is an estimate. Transcript checks identify scam-language patterns; neither check determines speaker identity or whether the claims are true.'
-          : 'This review transcribes speech and checks transcript text for scam-language patterns, but could not estimate whether the voice is synthetic.'
-        : 'Origin could not be verified from appearance alone. Screenshots and edited or compressed copies often lose provenance data. This is not forensic proof.'
+      verdict,
+      confidence,
+      reasons,
+      caveat: hasAiMarkers
+        ? `This audio file matches known signatures of AI generator ${metadataIndicators.join(', ')}.`
+        : isAudio
+          ? 'Voice origin could not be definitively proven from sound alone. Always verify callers via a trusted number.'
+          : 'Origin could not be verified from appearance alone. Always verify unexpected requests.'
     },
     aiDetection,
     provenance,
     metadataIndicators,
-    transcript: transcript.text,
-    transcriptStatus: transcript.status
+    transcript: hasSpokenWords ? cleanedTranscript : '',
+    transcriptStatus: hasSpokenWords ? transcript.status : 'no_speech_detected'
   }
 }
 
@@ -170,10 +233,31 @@ function isValidFrame(value) {
   return Boolean(match && Buffer.from(match[1], 'base64').length <= maxFrameBytes)
 }
 
-function inspectEmbeddedMarkers(bytes) {
-  const content = bytes.toString('latin1')
-  const markers = knownGeneratorMarkers.filter((marker) => content.toLowerCase().includes(marker.toLowerCase()))
-  return [...new Set(markers)]
+function markerMatches(pattern, text) {
+  if (!text) return false
+  const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const regex = new RegExp(`(?:^|[^a-zA-Z0-9])${escaped}(?:[^a-zA-Z0-9]|$)`, 'i')
+  return regex.test(text)
+}
+
+function inspectEmbeddedMarkers(bytes, fileName = '') {
+  if (!bytes && !fileName) return []
+  const latin = bytes ? bytes.toString('latin1') : ''
+  const utf16 = bytes ? bytes.toString('utf16le') : ''
+  const stripped = bytes ? latin.replace(/\x00/g, '') : ''
+  const nameContent = String(fileName || '')
+
+  const matches = []
+  for (const item of knownGeneratorDefinitions) {
+    const matched = item.patterns.some((pattern) => {
+      return markerMatches(pattern, nameContent) ||
+             markerMatches(pattern, latin) ||
+             markerMatches(pattern, utf16) ||
+             markerMatches(pattern, stripped)
+    })
+    if (matched) matches.push(item.name)
+  }
+  return [...new Set(matches)]
 }
 
 function cleanText(value, maxLength) {

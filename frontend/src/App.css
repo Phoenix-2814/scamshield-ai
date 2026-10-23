@@ -1812,6 +1812,158 @@
 }
 
 /* --------------------------------------------------------------------------
+   SIMPLIFIED MEDIA VERDICT CARDS
+   -------------------------------------------------------------------------- */
+.simple-verdict-card {
+  margin-bottom: 20px;
+  padding: 20px;
+  border-radius: 14px;
+  border: 1px solid var(--border-light);
+}
+
+.verdict-likely_ai_generated {
+  background: rgba(244, 63, 94, 0.1);
+  border-color: rgba(244, 63, 94, 0.35);
+}
+
+.verdict-no_strong_ai_signal,
+.verdict-no_clear_ai_signs {
+  background: rgba(16, 185, 129, 0.08);
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+.verdict-unclear,
+.verdict-inconclusive {
+  background: rgba(245, 158, 11, 0.08);
+  border-color: rgba(245, 158, 11, 0.3);
+}
+
+.provider-status-note {
+  margin: -10px 0 20px;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border-left: 3px solid var(--accent-cyan);
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.verdict-main strong {
+  display: block;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: #ffffff;
+  margin-bottom: 8px;
+}
+
+.verdict-likely_ai_generated .verdict-main strong {
+  color: #fda4af;
+}
+
+.verdict-main p {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.media-quick-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.quick-info-card {
+  padding: 16px;
+  background: rgba(9, 13, 22, 0.5);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+}
+
+.quick-info-card.highlight-card {
+  border-color: rgba(244, 63, 94, 0.3);
+  background: rgba(244, 63, 94, 0.06);
+}
+
+.quick-info-card.action-card {
+  border-color: rgba(56, 189, 248, 0.25);
+  background: rgba(56, 189, 248, 0.05);
+}
+
+.card-mini-title {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--text-dim);
+  margin-bottom: 10px;
+}
+
+.simple-bullet-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.simple-bullet-list li {
+  font-size: 13px;
+  line-height: 1.5;
+  color: #e2e8f0;
+  padding-left: 16px;
+  position: relative;
+}
+
+.simple-bullet-list li::before {
+  content: '→';
+  position: absolute;
+  left: 0;
+  color: var(--accent-cyan);
+  font-weight: 700;
+}
+
+.simple-bullet-list.warning-list li::before {
+  content: '⚠';
+  color: #f59e0b;
+}
+
+.simple-transcript {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #cbd5e1;
+  font-style: italic;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border-left: 3px solid var(--accent-cyan);
+  border-radius: 0 8px 8px 0;
+  margin: 0;
+}
+
+.dim-text {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin: 0;
+}
+
+.clean-text {
+  font-size: 13px;
+  color: #34d399;
+  font-weight: 600;
+  margin: 0;
+}
+
+.quick-info-card p {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #e2e8f0;
+  margin: 0;
+}
+
+/* --------------------------------------------------------------------------
    CURATED SCENARIOS SECTION (REPLACED "PROTOTYPE")
    -------------------------------------------------------------------------- */
 .scenarios-section {
