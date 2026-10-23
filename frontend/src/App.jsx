@@ -430,10 +430,9 @@ function App() {
           </a>
 
           <nav className="nav-links" aria-label="Primary navigation">
-            <a href="#analyzer-panel" className={activeTool === 'message' ? 'nav-active' : ''} onClick={() => setActiveTool('message')}>Message Analysis</a>
-            <a href="#analyzer-panel" className={activeTool === 'url' ? 'nav-active' : ''} onClick={() => setActiveTool('url')}>URL Reputation</a>
-            <a href="#analyzer-panel" className={activeTool === 'media' ? 'nav-active' : ''} onClick={() => setActiveTool('media')}>Deepfake & Media</a>
-            <a href="#how-it-works">Threat Architecture</a>
+            <a href="#analyzer-panel">Analyzer</a>
+            <a href="#how-it-works">How It Works</a>
+            <a href="#scenarios">Threat Scenarios</a>
           </nav>
 
           <div className="nav-actions">
@@ -1170,7 +1169,7 @@ function App() {
 
         {/* Curated Threat Scenario Presets */}
         {activeTool === 'message' && !result && (
-          <section className="scenarios-section" aria-label="Curated Threat Scenarios">
+          <section className="scenarios-section" id="scenarios" aria-label="Curated Threat Scenarios">
             <div className="scenarios-header">
               <span className="section-kicker">THREAT LIBRARY</span>
               <h3>Explore Common Attack Vectors</h3>
