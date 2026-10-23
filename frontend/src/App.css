@@ -222,7 +222,7 @@ footer { display: flex; justify-content: space-between; padding: 16px max(5%, ca
 .media-results { background: #fbfdfb; }
 .origin-badge { display: inline-flex; max-width: 210px; padding: 7px 9px; border: 1px solid #dce8df; border-radius: 8px; background: #f0f6f1; color: #42634d; font-size: 9px; line-height: 1.5; }
 .origin-likely_ai_generated { border-color: #edcfcb; background: #fff4f2; color: #984d44; }
-.origin-unclear { border-color: #eee3c8; background: #fffaf0; color: #80672f; }
+.origin-unclear, .origin-inconclusive { border-color: #eee3c8; background: #fffaf0; color: #80672f; }
 .media-summary { margin: 15px 0; color: #44574c; font-size: 11px; line-height: 1.7; }
 .media-result-block { margin-top: 13px; padding-top: 12px; border-top: 1px solid #e8eee9; }
 .media-result-block h3 { margin: 0 0 7px; color: #40564a; font-size: 10px; }

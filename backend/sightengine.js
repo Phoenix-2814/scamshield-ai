@@ -27,7 +27,7 @@ export async function detectSyntheticMedia({ bytes, mimeType, fileName, mediaTyp
   }
   const payload = await response.json().catch(() => null)
   if (!response.ok || payload?.status !== 'success') {
-    return { status: 'unavailable', score: null, label: null }
+    return { status: providerFailureStatus(response.status), score: null, label: null }
   }
   const scoreValue = mediaType === 'audio' ? payload?.type?.ai_speech : payload?.type?.ai_generated
   const score = Number(scoreValue)
@@ -43,4 +43,11 @@ export async function detectSyntheticMedia({ bytes, mimeType, fileName, mediaTyp
 function safeFileName(fileName, mediaType) {
   const ext = String(fileName || '').match(/\.[a-z0-9]{1,8}$/i)?.[0] || (mediaType === 'video' ? '.mp4' : mediaType === 'audio' ? '.mp3' : '.jpg')
   return `upload${ext.toLowerCase()}`
+}
+
+function providerFailureStatus(httpStatus) {
+  if (httpStatus === 401 || httpStatus === 403) return 'credentials_rejected'
+  if (httpStatus === 402) return 'payment_required'
+  if (httpStatus === 429) return 'quota_reached'
+  return 'unavailable'
 }

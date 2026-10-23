@@ -22,9 +22,19 @@ const urlCheckLabels = {
 }
 
 const mediaOriginLabels = {
-  likely_ai_generated: 'Visual evidence suggests possible AI generation',
+  likely_ai_generated: 'Strong AI-generation signal',
+  no_strong_ai_signal: 'No strong AI-generation signal',
+  inconclusive: 'AI-origin score inconclusive',
   no_clear_ai_signs: 'No obvious visual signs · origin unverified',
   unclear: 'Origin unclear · cannot verify from appearance alone'
+}
+
+const mediaDetectionErrors = {
+  credentials_rejected: 'Sightengine rejected its API credentials. Check SIGHTENGINE_API_USER and SIGHTENGINE_API_SECRET in the server environment.',
+  payment_required: 'Sightengine requires available credits or a plan that includes this detector.',
+  quota_reached: 'Sightengine usage quota reached. Check the plan quota before retrying.',
+  unavailable: 'Sightengine could not complete the AI-origin check. Content analysis is still shown.',
+  not_configured: 'Sightengine is not configured on the server; only the content analysis is available.'
 }
 
 function canvasFrame(source) {
@@ -367,10 +377,10 @@ function App() {
                 <button type="button" className="primary-button media-review" onClick={handleAnalyzeMedia} disabled={!mediaFile || (!mediaFrames.length && !mediaFile.type.startsWith('audio/')) || isAnalyzing || mediaPreparing}>{isAnalyzing && mediaFile ? 'Reviewing media…' : 'Review media'} <span aria-hidden="true">↗</span></button>
               </section>
               {mediaResult && <section className="results media-results" aria-live="polite" aria-atomic="true">
-                <div className="result-topline"><div><p className="result-kicker">{mediaResult.mediaType === 'audio' ? 'GROQ WHISPER + RULE CHECKS' : `GROQ VISION${mediaResult.mediaType === 'video' ? ' + WHISPER' : ''}`}{mediaResult.aiDetection?.status === 'completed' && ' + SIGHTENGINE'}</p><h2>Media assessment</h2></div><span className={`origin-badge origin-${mediaResult.authenticity.verdict}`}>{mediaResult.mediaType === 'audio' ? mediaResult.aiDetection?.status === 'completed' ? `${mediaResult.aiDetection.label === 'likely_ai_generated' ? 'AI speech signal' : mediaResult.aiDetection.label === 'no_strong_ai_signal' ? 'No strong AI speech signal' : 'Voice origin inconclusive'} · ${(mediaResult.aiDetection.score * 100).toFixed(0)}%` : 'Audio origin not assessed' : `${mediaOriginLabels[mediaResult.authenticity.verdict] || 'Origin unclear'} · ${mediaResult.authenticity.confidence} confidence`}</span></div>
+                <div className="result-topline"><div><p className="result-kicker">{mediaResult.mediaType === 'audio' ? 'GROQ WHISPER + RULE CHECKS' : `GROQ VISION${mediaResult.mediaType === 'video' ? ' + WHISPER' : ''}`}{mediaResult.aiDetection?.status === 'completed' && ' + SIGHTENGINE'}</p><h2>Media assessment</h2></div><span className={`origin-badge origin-${mediaResult.authenticity.verdict}`}>{mediaResult.aiDetection?.status === 'completed' ? `${mediaResult.mediaType === 'audio' ? mediaResult.aiDetection.label === 'likely_ai_generated' ? 'AI speech signal' : mediaResult.aiDetection.label === 'no_strong_ai_signal' ? 'No strong AI speech signal' : 'Inconclusive speech score' : mediaOriginLabels[mediaResult.aiDetection.label] || 'AI-origin estimate'} · ${(mediaResult.aiDetection.score * 100).toFixed(0)}% score` : mediaResult.mediaType === 'audio' ? 'Audio origin not assessed' : `${mediaOriginLabels[mediaResult.authenticity.verdict] || 'Origin unclear'} · ${mediaResult.authenticity.confidence} confidence`}</span></div>
                 <p className="media-summary">{mediaResult.summary || 'No clear description was returned.'}</p>
                 {mediaResult.aiDetection?.status === 'completed' && <div className="media-result-block"><h3>AI origin estimate · {mediaResult.mediaType === 'audio' ? 'speech' : mediaResult.mediaType}</h3><div className="detection-score"><strong>{(mediaResult.aiDetection.score * 100).toFixed(0)}%</strong><span>{mediaResult.aiDetection.label === 'likely_ai_generated' ? 'Strong AI-generation signal' : mediaResult.aiDetection.label === 'no_strong_ai_signal' ? 'No strong AI-generation signal' : 'Inconclusive score'}</span></div><small>{mediaResult.aiDetection.model}. This is a model score, not proof. A low score does not establish that media is authentic.</small></div>}
-                {mediaResult.aiDetection?.status === 'unavailable' && <p className="url-check-note">The separate AI-origin service was unavailable for this review; the content analysis is still shown.</p>}
+                {mediaResult.aiDetection?.status !== 'completed' && mediaResult.aiDetection?.status !== 'not_supported' && <p className="url-check-note" role="status">{mediaDetectionErrors[mediaResult.aiDetection?.status] || 'AI-origin scoring was not available for this file.'}</p>}
                 {mediaResult.provenance?.status !== 'unavailable' && <div className="media-result-block"><h3>Content Credentials (C2PA)</h3>{mediaResult.provenance?.status === 'found' ? <><p>Manifest detected · validation: <strong>{mediaResult.provenance.validation || 'unknown'}</strong></p>{mediaResult.provenance.signer && <p>Signer: {mediaResult.provenance.signer}</p>}{mediaResult.provenance.title && <p>Title: {mediaResult.provenance.title}</p>}{mediaResult.provenance.digitalSourceTypes?.length > 0 && <p>Digital source: {mediaResult.provenance.digitalSourceTypes.join(', ')}</p>}{mediaResult.provenance.actions?.length > 0 && <p>Recorded actions: {mediaResult.provenance.actions.join(', ')}</p>}<small>A valid signature supports the recorded provenance; it does not guarantee that the depicted claims are true.</small></> : mediaResult.provenance?.status === 'not_found' ? <p>No embedded Content Credentials were found. Many authentic files do not include C2PA credentials.</p> : <p>Credentials may be present, but they could not be validated or read.</p>}</div>}
                 {mediaResult.authenticity.reasons.length > 0 && <div className="media-result-block"><h3>Origin clues</h3><ul>{mediaResult.authenticity.reasons.map((item, index) => <li key={index}>{item}</li>)}</ul></div>}
                 {Object.keys(mediaResult.visualChecks || {}).length > 0 && <div className="media-result-block"><h3>Visual clues reviewed</h3>{Object.entries(mediaResult.visualChecks).map(([key, items]) => <p className="visual-check-row" key={key}><strong>{({ anatomy_details: 'Anatomy and fine details', text_and_symbols: 'Text and symbols', spatial_geometry: 'Spatial geometry', lighting_and_reflections: 'Lighting and reflections', texture_consistency: 'Texture consistency' })[key] || key}:</strong> {items.join('; ')}</p>)}<small>These are model observations from visible pixels, not forensic findings.</small></div>}

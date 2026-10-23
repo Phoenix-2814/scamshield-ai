@@ -55,7 +55,7 @@ export async function analyzeUploadedMedia({ apiKey, bytes, mimeType, fileName, 
     visualChecks: isAudio ? {} : cleanVisualChecks(vision.visual_checks),
     authenticity: {
       verdict: aiDetection.status === 'completed'
-        ? aiDetection.label === 'likely_ai_generated' ? 'likely_ai_generated' : 'unclear'
+        ? aiDetection.label
         : isAudio || vision.origin_verdict === 'no_clear_ai_signs' ? 'unclear' : vision.origin_verdict,
       confidence: aiDetection.status === 'completed'
         ? aiDetection.label === 'inconclusive' ? 'low' : 'medium'
