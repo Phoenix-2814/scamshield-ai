@@ -1118,7 +1118,9 @@ function App() {
                         <p>
                           {mediaResult.authenticity?.verdict === 'likely_ai_generated'
                             ? 'Never send money, OTPs, or passwords based on voice notes alone. Always call the real person directly on their trusted phone number to verify.'
-                            : 'If anyone unexpected asks for sudden favors or financial assistance, verify their identity independently before taking action.'}
+                            : mediaResult.authenticity?.verdict === 'no_strong_ai_signal'
+                              ? 'The audio shows natural human speech characteristics with no AI markers. Always remain cautious if unfamiliar senders make unexpected payment requests.'
+                              : 'If anyone unexpected asks for sudden favors or financial assistance, verify their identity independently before taking action.'}
                         </p>
                       </div>
                     </div>

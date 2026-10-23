@@ -79,33 +79,41 @@ export async function analyzeUploadedMedia({ apiKey, bytes, mimeType, fileName, 
   const transcriptSignals = isAudio && transcript.text ? analyzeMessage(transcript.text).signals : []
   const hasAiMarkers = metadataIndicators.length > 0
 
+  const cleanedTranscript = (transcript.text || '').trim()
+  const hasSpokenWords = cleanedTranscript.length > 1 && cleanedTranscript !== '.'
+
   const verdict = aiDetection.status === 'completed'
     ? (hasAiMarkers && aiDetection.label !== 'likely_ai_generated' ? 'likely_ai_generated' : aiDetection.label)
     : hasAiMarkers
       ? 'likely_ai_generated'
-      : isAudio || vision?.origin_verdict === 'no_clear_ai_signs' ? 'unclear' : (vision?.origin_verdict || 'unclear')
+      : isAudio
+        ? (hasSpokenWords ? 'no_strong_ai_signal' : 'unclear')
+        : (vision?.origin_verdict === 'no_clear_ai_signs' ? 'no_strong_ai_signal' : (vision?.origin_verdict || 'unclear'))
 
   const confidence = aiDetection.status === 'completed'
-    ? aiDetection.label === 'inconclusive' ? 'low' : 'medium'
+    ? (aiDetection.label === 'inconclusive' ? 'low' : 'medium')
     : hasAiMarkers
       ? 'high'
-      : isAudio || vision?.origin_verdict === 'no_clear_ai_signs' ? 'low' : (vision?.origin_confidence || 'low')
+      : isAudio
+        ? (hasSpokenWords ? 'medium' : 'low')
+        : (vision?.origin_verdict === 'no_clear_ai_signs' ? 'medium' : (vision?.origin_confidence || 'low'))
 
   const reasons = [
     ...(hasAiMarkers ? [`AI tool signature / metadata identified: ${metadataIndicators.join(', ')}`] : []),
-    ...(isAudio ? [] : cleanList(vision?.origin_reasons, 8, 300))
+    ...(isAudio
+      ? (!hasAiMarkers && hasSpokenWords ? ['Natural speech patterns detected with no common AI generator signatures'] : [])
+      : cleanList(vision?.origin_reasons, 8, 300))
   ]
-
-  const cleanedTranscript = (transcript.text || '').trim()
-  const hasSpokenWords = cleanedTranscript.length > 1 && cleanedTranscript !== '.'
 
   const summary = isAudio
     ? hasAiMarkers
       ? `Likely AI-generated audio. Found signature matching ${metadataIndicators.join(', ')}.`
       : hasSpokenWords
         ? aiDetection.status === 'completed'
-          ? 'Speech was transcribed and checked for AI speech patterns.'
-          : 'Speech was transcribed. No common AI markers were found in file metadata.'
+          ? (aiDetection.label === 'likely_ai_generated'
+              ? 'Speech was transcribed. Biometric speech scanner flagged potential synthetic voice traits.'
+              : 'Speech was transcribed. No common AI markers or synthetic voice traits found.')
+          : 'Clean voice recording. Speech was transcribed and no AI generator signatures were found.'
         : 'Audio clip analyzed. No clear speech or scam language detected.'
     : hasAiMarkers
       ? `Likely AI-generated media. Found digital generator markers from ${metadataIndicators.join(', ')}.`
@@ -127,7 +135,9 @@ export async function analyzeUploadedMedia({ apiKey, bytes, mimeType, fileName, 
       caveat: hasAiMarkers
         ? `This audio file matches known signatures of AI generator ${metadataIndicators.join(', ')}.`
         : isAudio
-          ? 'Voice origin could not be definitively proven from sound alone. Always verify callers via a trusted number.'
+          ? (hasSpokenWords
+              ? 'No digital AI generator signatures were detected in this voice recording. Always independently verify unexpected financial or credential requests.'
+              : 'Voice origin could not be definitively proven from sound alone. Always verify callers via a trusted number.')
           : 'Origin could not be verified from appearance alone. Always verify unexpected requests.'
     },
     aiDetection,
