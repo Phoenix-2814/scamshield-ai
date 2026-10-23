@@ -20,9 +20,11 @@ Open the Vite URL shown in the terminal. The dev command starts both the API on 
 
 Requests must be JSON. Messages are limited to 5,000 characters. The API enforces a request body limit, applies a small per-process rate limit, sends browser security headers, and does not log message contents. The rate limiter is an in-memory prototype guard; it resets at restart and is not suitable across multiple replicas.
 
-## Optional semantic analysis
+## Optional Gemini analysis
 
-Rules-based analysis works without external AI. To enable the semantic mode, configure these variables in the **server** environment before starting the app:
+Rules-based analysis is the default. To enable Gemini locally, copy `.env.example` to `.env`, uncomment `SCAMSHIELD_AI_PROVIDER` and `GEMINI_MODEL`, and set your key in `GEMINI_API_KEY`. The `npm run dev` and `npm start` commands load the root `.env` file. Keep the key server-side; never put it in frontend code or a `VITE_` variable.
+
+The equivalent **server** environment settings are:
 
 ```text
 SCAMSHIELD_AI_PROVIDER=gemini
