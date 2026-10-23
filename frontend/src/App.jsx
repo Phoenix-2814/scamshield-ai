@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { analyzeMediaRequest, analyzeMessageRequest, checkUrlRequest, getAnalyzerConfig } from './api'
+import { analyzeDocumentRequest, analyzeMediaRequest, analyzeMessageRequest, checkUrlRequest, getAnalyzerConfig } from './api'
 import './App.css'
 
 const threatScenarios = [
@@ -39,6 +39,49 @@ const threatScenarios = [
     label: 'Routine calendar check',
     message: 'Hi! Are we still meeting at the public library reading hall at 4 PM for the project discussion? Let me know if the time works for you.'
   },
+]
+
+const documentScenarios = [
+  {
+    category: 'Word Macro',
+    badge: 'Critical Macro',
+    label: 'Fake Invoice Macro Lure (.docm)',
+    fileName: 'Overdue_Vendor_Invoice.docm',
+    content: 'PK\\x03\\x04[Simulated Office OpenXML Word Document with VBA Macro]\\nURGENT NOTICE: To view and decrypt your outstanding balance of $4,850.00, click "Enable Content" and "Enable Editing" in the yellow security bar above.\\nAutoOpen macro triggers powershell.exe -enc ...',
+    type: 'application/vnd.ms-word.document.macroEnabled.12'
+  },
+  {
+    category: 'PDF Exploit',
+    badge: 'Process Launch',
+    label: 'PDF Launch Action & Form Trap (.pdf)',
+    fileName: 'Review_Contract_DocuSign.pdf',
+    content: '%PDF-1.4\\n1 0 obj\\n<< /Type /Catalog /Pages 2 0 R /OpenAction << /S /Launch /F (powershell.exe) >> >>\\nendobj\\n2 0 obj\\n<< /Type /Pages /Kids [] /Count 0 >>\\nendobj\\ntrailer\\n<< /Root 1 0 R >>\\n%%EOF',
+    type: 'application/pdf'
+  },
+  {
+    category: 'Excel DDE',
+    badge: 'Formula Injection',
+    label: 'Payroll Refund Injection (.csv)',
+    fileName: 'Tax_Refund_Report.csv',
+    content: 'Employee,Department,PendingRefund\\nJohn Doe,Finance,=cmd|\'/C calc\'!A0\\nJane Smith,Engineering,450.00\\nBob Wilson,Operations,890.00\\n',
+    type: 'text/csv'
+  },
+  {
+    category: 'File Spoofing',
+    badge: 'Double Extension',
+    label: 'Disguised Executable (.pdf.exe)',
+    fileName: 'Official_Notice.pdf.exe',
+    content: 'MZ\\x90\\x00\\x03\\x00\\x00\\x00This program cannot be run in DOS mode. Disguised binary payload.',
+    type: 'application/x-msdownload'
+  },
+  {
+    category: 'Clean Daily File',
+    badge: 'Clean Safe',
+    label: 'Quarterly Planning Notes (.txt)',
+    fileName: 'Q3_Strategy_Notes.txt',
+    content: 'Quarterly Business Review Agenda:\\n1. Financial targets for Q3 and Q4\\n2. Customer satisfaction survey results\\n3. Reviewing cloud infrastructure optimizations\\n4. All team members meet on Tuesday at 10 AM.',
+    type: 'text/plain'
+  }
 ]
 
 const urlCheckLabels = {
@@ -210,6 +253,16 @@ const UploadIcon = () => (
   </svg>
 )
 
+const FileTextIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+    <polyline points="14 2 14 8 20 8"/>
+    <line x1="16" y1="13" x2="8" y2="13"/>
+    <line x1="16" y1="17" x2="8" y2="17"/>
+    <polyline points="10 9 9 9 8 9"/>
+  </svg>
+)
+
 function App() {
   const [message, setMessage] = useState('')
   const [result, setResult] = useState(null)
@@ -228,6 +281,11 @@ function App() {
   const [urlResult, setUrlResult] = useState(null)
   const [urlError, setUrlError] = useState('')
   const [urlChecking, setUrlChecking] = useState(false)
+  const [docFile, setDocFile] = useState(null)
+  const [docResult, setDocResult] = useState(null)
+  const [docError, setDocError] = useState('')
+  const [isAnalyzingDoc, setIsAnalyzingDoc] = useState(false)
+  const [docUseAi, setDocUseAi] = useState(false)
   const configRequest = useRef(null)
 
   useEffect(() => {
@@ -355,6 +413,79 @@ function App() {
     setUrlInput('')
     setUrlResult(null)
     setUrlError('')
+    setDocFile(null)
+    setDocResult(null)
+    setDocError('')
+  }
+
+  function handleDocFileSelected(file) {
+    if (!file) return
+    if (file.size > 25 * 1024 * 1024) {
+      setDocError('File size limit exceeded. Upload documents smaller than 25 MB.')
+      setDocFile(null)
+      setDocResult(null)
+      return
+    }
+    setDocError('')
+    setDocResult(null)
+    setDocFile(file)
+  }
+
+  function handleDocChange(event) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (file) handleDocFileSelected(file)
+  }
+
+  function handleLoadDocScenario(scenario) {
+    const file = new File([scenario.content], scenario.fileName, { type: scenario.type })
+    setDocFile(file)
+    setDocResult(null)
+    setDocError('')
+  }
+
+  async function handleAnalyzeDocument() {
+    if (!docFile) return
+    setIsAnalyzingDoc(true)
+    setDocError('')
+    setDocResult(null)
+    try {
+      const res = await analyzeDocumentRequest(docFile, docUseAi)
+      setDocResult(res)
+    } catch (error) {
+      setDocError(error.message || 'Could not complete document forensic audit.')
+    } finally {
+      setIsAnalyzingDoc(false)
+    }
+  }
+
+  async function copyDocAssessment(doc) {
+    const lines = [
+      `=========================================`,
+      `SCAMSHIELD DOCUMENT FORENSIC AUDIT REPORT`,
+      `File: ${doc.fileName} (${doc.fileType})`,
+      `Risk Assessment: ${doc.level?.toUpperCase()} (Score: ${doc.score}/100)`,
+      `Inspection Engine: ${doc.mode === 'ai-assisted' ? `${config?.externalProvider || 'AI'} Multi-Modal + Deep Heuristics` : 'Deterministic Deep Heuristic Engine'}`,
+      `=========================================`,
+      `\nThreat Categories: ${doc.categories?.join(', ') || 'None Detected'}`,
+      `\nKey Forensic Findings:`,
+      ...doc.signals.map((sig, i) => `${i + 1}. [${sig.category}] ${sig.name} (${sig.points} pts)\n   Evidence: "${sig.evidence}"\n   Explanation: ${sig.explanation}\n   Action: ${sig.advice}`),
+      ...(doc.extractedUrls?.length ? [
+        `\nExtracted Embedded URLs:`,
+        ...doc.extractedUrls.map((u) => `- ${u}`)
+      ] : []),
+      `\nRecommended Action Protocol:`,
+      ...doc.advice.map((item, i) => `${i + 1}. ${item}`),
+      `\nNotice: Automated document forensic assessment by ScamShield AI Platform.`
+    ]
+    try {
+      await navigator.clipboard.writeText(lines.join('\n'))
+      setCopyState('Report Copied to Clipboard!')
+      window.setTimeout(() => setCopyState(''), 2500)
+    } catch {
+      setCopyState('Copy failed')
+      window.setTimeout(() => setCopyState(''), 2500)
+    }
   }
 
   function loadExample(scenario) {
@@ -573,6 +704,22 @@ function App() {
                 <div className="tab-details">
                   <strong>Message & Chat</strong>
                   <small>NLP, urgency & scam patterns</small>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                id="document-tab"
+                role="tab"
+                aria-controls="document-panel"
+                aria-selected={activeTool === 'document'}
+                className={`tab-btn ${activeTool === 'document' ? 'active' : ''}`}
+                onClick={() => setActiveTool('document')}
+              >
+                <div className="tab-icon"><FileTextIcon /></div>
+                <div className="tab-details">
+                  <strong>Document & Office</strong>
+                  <small>PPT, Word, Excel, PDF, Text</small>
                 </div>
               </button>
 
@@ -890,6 +1037,339 @@ function App() {
               </form>
             )}
 
+            {/* DOCUMENT TAB */}
+            {activeTool === 'document' && (
+              <section className="doc-tool-container" role="tabpanel" id="document-panel" aria-labelledby="document-tab">
+                <div className="tool-intro">
+                  <span className="section-kicker">DOCUMENT & OFFICE FILE AUDITOR</span>
+                  <h3>Deep Multi-Layer File Forensics</h3>
+                  <p>Inspect daily business files (PowerPoint, Word, Excel, PDF, Text, CSV) for malicious macros, formula injection (DDE), embedded payloads, phishing URLs, and social engineering traps.</p>
+                </div>
+
+                <div className="doc-format-strip">
+                  <span className="format-tag ppt">📊 PPT / PPTX</span>
+                  <span className="format-tag word">📄 Word DOC / DOCX</span>
+                  <span className="format-tag excel">📈 Excel XLS / XLSX / CSV</span>
+                  <span className="format-tag pdf">📕 PDF</span>
+                  <span className="format-tag txt">📝 Text / RTF / EML</span>
+                </div>
+
+                {!docFile ? (
+                  <div
+                    className="doc-dropzone"
+                    onClick={() => document.getElementById('doc-file-input').click()}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                      e.preventDefault()
+                      const file = e.dataTransfer.files?.[0]
+                      if (file) handleDocFileSelected(file)
+                    }}
+                  >
+                    <input
+                      type="file"
+                      id="doc-file-input"
+                      style={{ display: 'none' }}
+                      accept=".pdf,.doc,.docx,.docm,.dotx,.dotm,.xls,.xlsx,.xlsm,.xltx,.xltm,.csv,.tsv,.ppt,.pptx,.pptm,.potx,.potm,.txt,.rtf,.md,.markdown,.log,.json,.xml,.html,.htm,.eml,.msg,.zip"
+                      onChange={handleDocChange}
+                    />
+                    <div className="dropzone-icon">
+                      <UploadIcon />
+                    </div>
+                    <div className="dropzone-text">
+                      <strong>Click to browse or drag & drop daily files here</strong>
+                      <p>Supports PowerPoint (.pptx, .ppt), Word (.docx, .doc, .docm), Excel (.xlsx, .xls, .csv), PDF, Text (.txt, .rtf, .md, .eml) up to 25 MB.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="doc-selected-card">
+                    <div className="doc-icon-badge">
+                      <FileTextIcon />
+                    </div>
+                    <div className="doc-details">
+                      <strong>{docFile.name}</strong>
+                      <small>{(docFile.size / 1024).toFixed(1)} KB · {docFile.type || 'Office/Document File'}</small>
+                    </div>
+                    <button
+                      type="button"
+                      className="remove-btn"
+                      onClick={() => {
+                        setDocFile(null)
+                        setDocResult(null)
+                        setDocError('')
+                      }}
+                      disabled={isAnalyzingDoc}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                )}
+
+                {/* Scenario Presets Pill Bar */}
+                <div className="doc-scenarios-section">
+                  <div className="scenarios-title">
+                    <span>⚡ Quick Test with Document Threat Scenarios:</span>
+                  </div>
+                  <div className="doc-scenarios-pills">
+                    {documentScenarios.map((scenario, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        className="doc-scenario-btn"
+                        onClick={() => handleLoadDocScenario(scenario)}
+                        disabled={isAnalyzingDoc}
+                      >
+                        <span className="pill-badge">{scenario.badge}</span>
+                        <span className="pill-name">{scenario.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Form Controls */}
+                <div className="form-footer" style={{ marginTop: '20px' }}>
+                  {config?.aiAssistedAvailable ? (
+                    <label className="checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: 'var(--text-muted)' }}>
+                      <input
+                        type="checkbox"
+                        checked={docUseAi}
+                        onChange={(e) => setDocUseAi(e.target.checked)}
+                        disabled={isAnalyzingDoc}
+                      />
+                      <span>Enable {config.externalProvider} Multi-Modal Threat Reasoning</span>
+                    </label>
+                  ) : <div />}
+                  <div className="actions" style={{ marginLeft: 'auto' }}>
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => {
+                        setDocFile(null)
+                        setDocResult(null)
+                        setDocError('')
+                      }}
+                      disabled={isAnalyzingDoc || (!docFile && !docResult)}
+                    >
+                      Clear
+                    </button>
+                    <button
+                      type="button"
+                      className="primary-button"
+                      onClick={handleAnalyzeDocument}
+                      disabled={!docFile || isAnalyzingDoc}
+                    >
+                      {isAnalyzingDoc ? (
+                        <>
+                          <span className="btn-spinner" /> Running Forensic Audit…
+                        </>
+                      ) : (
+                        <>
+                          Audit Document Safety <ArrowUpRightIcon />
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {docError && (
+                  <div className="error-alert" role="alert" style={{ marginTop: '16px' }}>
+                    <AlertCircleIcon />
+                    <p>{docError}</p>
+                  </div>
+                )}
+
+                {/* Document Result Section */}
+                {docResult && (
+                  <section className="results-card" aria-live="polite" style={{ marginTop: '24px' }}>
+                    <div className="result-topline">
+                      <div>
+                        <span className="result-kicker">
+                          {docResult.mode === 'ai-assisted' ? `${(config?.externalProvider || 'AI').toUpperCase()} + FORENSIC ENGINE` : 'DEEP DOCUMENT FORENSIC AUDIT'}
+                        </span>
+                        <h2>Audit Findings: {docResult.fileName}</h2>
+                      </div>
+                      <div className={`risk-badge risk-${docResult.level?.toLowerCase()}`}>
+                        <span className="risk-dot" />
+                        <span className="risk-label">{docResult.level?.toUpperCase()} RISK · SCORE {docResult.score}/100</span>
+                      </div>
+                    </div>
+
+                    {/* Metadata Strip */}
+                    <div className="trust-metrics-strip" style={{ marginTop: '16px', marginBottom: '20px' }}>
+                      <div className="metric-chip">
+                        <span className="metric-dot blue" />
+                        <strong>File Type</strong>
+                        <small>{docResult.fileType}</small>
+                      </div>
+                      <div className="metric-chip">
+                        <span className="metric-dot green" />
+                        <strong>File Size</strong>
+                        <small>{(docResult.fileSize / 1024).toFixed(1)} KB</small>
+                      </div>
+                      {docResult.metadata?.pageCount ? (
+                        <div className="metric-chip">
+                          <span className="metric-dot amber" />
+                          <strong>Pages</strong>
+                          <small>{docResult.metadata.pageCount} Pages</small>
+                        </div>
+                      ) : null}
+                      {docResult.metadata?.sheetCount ? (
+                        <div className="metric-chip">
+                          <span className="metric-dot amber" />
+                          <strong>Sheets</strong>
+                          <small>{docResult.metadata.sheetCount} Worksheets</small>
+                        </div>
+                      ) : null}
+                      {docResult.metadata?.slideCount ? (
+                        <div className="metric-chip">
+                          <span className="metric-dot amber" />
+                          <strong>Slides</strong>
+                          <small>{docResult.metadata.slideCount} Slides</small>
+                        </div>
+                      ) : null}
+                      <div className="metric-chip">
+                        <span className="metric-dot cyan" />
+                        <strong>Extracted URLs</strong>
+                        <small>{docResult.extractedUrls?.length || 0} Links</small>
+                      </div>
+                    </div>
+
+                    {/* Simple summary banner */}
+                    <div className={`simple-verdict-card verdict-${docResult.level === 'High' ? 'likely_ai_generated' : docResult.level === 'Medium' ? 'unclear' : 'no_strong_ai_signal'}`}>
+                      <div className="verdict-main">
+                        <strong>
+                          {docResult.level === 'High'
+                            ? 'Critical Warning: Dangerous patterns or exploit signatures detected in this document.'
+                            : docResult.level === 'Medium'
+                              ? 'Suspicious Indicators Found: Exercise caution before opening or executing content.'
+                              : 'Document Appears Clean: No malicious macros, formula injections, or dangerous objects found.'}
+                        </strong>
+                        <p>
+                          {docResult.assessment?.summary ||
+                            (docResult.signals.length
+                              ? `Detected ${docResult.signals.length} security signal(s) across categories: ${docResult.categories.join(', ')}.`
+                              : 'No executable binaries, auto-running macros, or phishing lures were uncovered during the scan.')}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Findings Grid: Signals & Advice */}
+                    <div className="findings-grid">
+                      <div className="signals-panel">
+                        <div className="panel-header">
+                          <h3>Forensic Findings</h3>
+                          <span className="signal-count">{docResult.signals.length} Signals</span>
+                        </div>
+                        {docResult.signals.length ? (
+                          <ul className="signal-cards-list">
+                            {docResult.signals.map((signal, index) => (
+                              <li className="signal-card" key={`${signal.name}-${index}`}>
+                                <div className="signal-top">
+                                  <span className="signal-cat-badge">{signal.category}</span>
+                                  <span className="signal-points">+{signal.points} pts</span>
+                                </div>
+                                <strong>{signal.name}</strong>
+                                {signal.evidence && (
+                                  <div className="signal-evidence">
+                                    <span className="evidence-label">Detected Evidence:</span>
+                                    <span className="evidence-quote">&ldquo;{signal.evidence}&rdquo;</span>
+                                  </div>
+                                )}
+                                {signal.explanation && (
+                                  <p className="signal-explanation">{signal.explanation}</p>
+                                )}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <div className="empty-signals">
+                            <ShieldCheckIcon />
+                            <p>No malicious macros, formula injections, or exploit scripts were discovered.</p>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="advice-panel">
+                        <div className="panel-header">
+                          <h3>Recommended Action Protocol</h3>
+                          <span className="signal-count">{docResult.advice.length} Protocols</span>
+                        </div>
+                        <ol className="advice-list">
+                          {docResult.advice.map((item, index) => (
+                            <li key={index} className="advice-item">
+                              <span className="advice-num">{index + 1}</span>
+                              <div className="advice-body">
+                                <p>{item}</p>
+                              </div>
+                            </li>
+                          ))}
+                        </ol>
+                      </div>
+                    </div>
+
+                    {/* Extracted URLs with VirusTotal Feed */}
+                    {docResult.extractedUrls?.length > 0 && (
+                      <div className="forensic-block" style={{ marginTop: '24px' }}>
+                        <div className="block-title">
+                          <GlobeIcon />
+                          <h3>Extracted Embedded Hyperlinks ({docResult.extractedUrls.length})</h3>
+                        </div>
+                        <div className="table-responsive" style={{ overflowX: 'auto', marginTop: '12px' }}>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                            <thead>
+                              <tr style={{ borderBottom: '1px solid var(--border-subtle)', textAlign: 'left', color: 'var(--text-muted)' }}>
+                                <th style={{ padding: '8px 12px' }}>Hyperlink Destination</th>
+                                <th style={{ padding: '8px 12px' }}>Threat Status</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {docResult.extractedUrls.map((url, i) => {
+                                const vtResult = docResult.urlChecks?.results?.find((r) => r.url === url)
+                                return (
+                                  <tr key={i} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.04)' }}>
+                                    <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: '#60a5fa', wordBreak: 'break-all' }}>{url}</td>
+                                    <td style={{ padding: '8px 12px' }}>
+                                      {vtResult ? (
+                                        <span className={`status-pill status-${vtResult.status}`}>
+                                          {urlCheckLabels[vtResult.status] || vtResult.status}
+                                        </span>
+                                      ) : (
+                                        <span className="status-pill status-unrated">Extracted Link</span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                )
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Extracted Text Preview Accordion */}
+                    {docResult.textPreview && (
+                      <div className="forensic-block" style={{ marginTop: '24px' }}>
+                        <div className="block-title">
+                          <FileTextIcon />
+                          <h3>Extracted Document Text Content</h3>
+                        </div>
+                        <div className="doc-text-preview" style={{ maxHeight: '180px', overflowY: 'auto', background: 'rgba(0, 0, 0, 0.25)', padding: '12px 16px', borderRadius: '8px', fontSize: '13px', lineHeight: '1.6', color: 'var(--text-muted)', whiteSpace: 'pre-wrap', marginTop: '10px' }}>
+                          {docResult.textPreview}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Report Export Button */}
+                    <div className="report-action-bar" style={{ marginTop: '24px' }}>
+                      <span className="action-bar-label">Export or forward this document forensic report to your security team.</span>
+                      <button type="button" className="copy-report-btn" onClick={() => copyDocAssessment(docResult)}>
+                        {copyState ? <CheckIcon /> : <CopyIcon />} {copyState || 'Copy Full Intelligence Report'}
+                      </button>
+                    </div>
+                  </section>
+                )}
+              </section>
+            )}
+
             {/* URL TAB */}
             {activeTool === 'url' && (
               <section className="url-tool-container" role="tabpanel" id="url-panel" aria-labelledby="url-tab">
@@ -1172,6 +1652,39 @@ function App() {
                   <strong>{scenario.label}</strong>
                   <p>&ldquo;{scenario.message.slice(0, 85)}…&rdquo;</p>
                   <span className="scenario-action">Load into Analyzer <ArrowUpRightIcon /></span>
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* Document Threat Presets */}
+        {activeTool === 'document' && !docResult && (
+          <section className="scenarios-section" id="doc-scenarios" aria-label="Curated Document Threat Scenarios">
+            <div className="scenarios-header">
+              <span className="section-kicker">DOCUMENT THREAT LIBRARY</span>
+              <h3>Explore Common Document Attack Vectors</h3>
+              <p>Test the file forensic engine against real-world malicious documents, macro payloads, and formula injection traps:</p>
+            </div>
+            <div className="scenarios-grid">
+              {documentScenarios.map((scenario) => (
+                <button
+                  type="button"
+                  key={scenario.label}
+                  className="scenario-card-btn"
+                  onClick={() => {
+                    handleLoadDocScenario(scenario)
+                    const panel = document.getElementById('analyzer-panel')
+                    if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                  }}
+                >
+                  <div className="scenario-top">
+                    <span className="scenario-badge">{scenario.badge}</span>
+                    <span className="scenario-category">{scenario.category}</span>
+                  </div>
+                  <strong>{scenario.label}</strong>
+                  <p>&ldquo;{scenario.fileName}&rdquo;</p>
+                  <span className="scenario-action">Load into File Auditor <ArrowUpRightIcon /></span>
                 </button>
               ))}
             </div>

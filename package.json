@@ -9,10 +9,12 @@
     "dev": "node --env-file-if-exists=.env scripts/dev.mjs",
     "start": "node --env-file-if-exists=.env backend/server.js",
     "build": "npm --prefix frontend run build",
-    "lint": "npm --prefix frontend run lint && node --check backend/server.js && node --check backend/media-analyzer.js && node --check backend/sightengine.js && node --check backend/c2pa.js && node --check backend/gemini-classifier.js && node --check backend/groq-classifier.js && node --check backend/virustotal.js && node --check shared/detector.js && node --check scripts/dev.mjs",
-    "test": "npm --prefix frontend test"
+    "lint": "npm --prefix frontend run lint && node --check backend/server.js && node --check backend/document-analyzer.js && node --check backend/media-analyzer.js && node --check backend/sightengine.js && node --check backend/c2pa.js && node --check backend/gemini-classifier.js && node --check backend/groq-classifier.js && node --check backend/virustotal.js && node --check shared/detector.js && node --check scripts/dev.mjs",
+    "test": "npm --prefix frontend test && node --test test/*.test.mjs"
   },
   "dependencies": {
-    "@contentauth/c2pa-node": "^0.9.10"
+    "@contentauth/c2pa-node": "^0.9.10",
+    "adm-zip": "^0.6.1",
+    "pdf-parse": "^2.4.5"
   }
 }

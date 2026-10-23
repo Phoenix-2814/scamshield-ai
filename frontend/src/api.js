@@ -70,3 +70,26 @@ export async function checkUrlRequest(url) {
   }
   return payload.urlChecks
 }
+
+export async function analyzeDocumentRequest(file, useAiAnalysis = false) {
+  const form = new FormData()
+  form.append('file', file)
+  if (useAiAnalysis) form.append('useAiAnalysis', 'true')
+  let response
+  try {
+    response = await fetch('/api/analyze-document', {
+      method: 'POST',
+      headers: { Accept: 'application/json' },
+      body: form,
+      signal: AbortSignal.timeout(60000)
+    })
+  } catch {
+    throw new Error('ScamShield could not reach its document analysis service. Check your connection and try again.')
+  }
+  const payload = await response.json().catch(() => null)
+  if (!response.ok) throw new Error(payload?.error?.message ?? 'The document analysis service could not complete this request.')
+  if (!payload?.documentAnalysis || !Array.isArray(payload.documentAnalysis.signals)) {
+    throw new Error('The document analysis service returned an unexpected response.')
+  }
+  return payload.documentAnalysis
+}

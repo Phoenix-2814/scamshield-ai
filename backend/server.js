@@ -8,6 +8,7 @@ import { analyzeMessage } from '../shared/detector.js'
 import { classifyMessageWithGemini } from './gemini-classifier.js'
 import { classifyMessageWithGroq } from './groq-classifier.js'
 import { analyzeUploadedMedia } from './media-analyzer.js'
+import { analyzeDocument, getSupportedExtensions } from './document-analyzer.js'
 import { sightengineConfigured } from './sightengine.js'
 import { checkMessageUrls, checkSingleUrl } from './virustotal.js'
 
@@ -34,6 +35,7 @@ const port = readInteger(process.env.PORT, 8787, 1, 65535)
 const host = process.env.HOST || '127.0.0.1'
 const maxBodyBytes = readInteger(process.env.MAX_BODY_BYTES, 24000, 1024, 65536)
 const maxMediaBodyBytes = readInteger(process.env.MAX_MEDIA_BODY_BYTES, 32 * 1024 * 1024, 1024, 100 * 1024 * 1024)
+const maxDocumentBodyBytes = readInteger(process.env.MAX_DOCUMENT_BODY_BYTES, 25 * 1024 * 1024, 1024, 50 * 1024 * 1024)
 const rateWindowMs = readInteger(process.env.RATE_LIMIT_WINDOW_MS, 60000, 1000, 3600000)
 const rateLimit = readInteger(process.env.RATE_LIMIT_MAX, 30, 1, 10000)
 const mediaRateLimit = readInteger(process.env.MEDIA_RATE_LIMIT_MAX, 5, 1, 60)
@@ -227,6 +229,8 @@ const server = createServer(async (request, response) => {
         aiAssistedAvailable: aiEnabled,
         mediaAnalysisAvailable,
         mediaAiDetectionAvailable,
+        documentAnalysisAvailable: true,
+        supportedDocumentExtensions: getSupportedExtensions(),
         externalProvider,
         virusTotalAvailable,
         requestId
@@ -332,6 +336,62 @@ const server = createServer(async (request, response) => {
         const code = error.status === 413 ? 'MEDIA_TOO_LARGE' : error.status === 415 ? 'UNSUPPORTED_MEDIA_TYPE' : error.status === 503 ? 'MEDIA_PROVIDER_ERROR' : 'INVALID_MEDIA'
         if (error.providerStatus) console.error(`[${requestId}] Media provider request failed: HTTP ${error.providerStatus}`)
         writeJson(response, error.status || 400, { error: { code, message: error.message || 'The media upload could not be analyzed.', requestId } })
+      }
+      return
+    }
+    if (pathname === '/api/analyze-document' && request.method === 'POST') {
+      const limit = consumeMediaRateLimit(request)
+      response.setHeader('RateLimit-Limit', String(mediaRateLimit))
+      response.setHeader('RateLimit-Remaining', String(limit.remaining))
+      response.setHeader('RateLimit-Reset', String(Math.ceil(limit.resetAt / 1000)))
+      if (!limit.allowed) {
+        request.resume()
+        writeJson(response, 429, { error: { code: 'RATE_LIMITED', message: 'Document review limit reached. Wait a moment and try again.', requestId } }, { 'Retry-After': String(Math.ceil((limit.resetAt - Date.now()) / 1000)) })
+        return
+      }
+      const contentType = String(request.headers['content-type'] || '')
+      if (!contentType.toLowerCase().startsWith('multipart/form-data;')) {
+        request.resume()
+        writeJson(response, 415, { error: { code: 'UNSUPPORTED_MEDIA_TYPE', message: 'Upload document as multipart form data.', requestId } })
+        return
+      }
+      const contentLength = Number(request.headers['content-length'] || 0)
+      if (contentLength > maxDocumentBodyBytes) {
+        request.resume()
+        writeJson(response, 413, { error: { code: 'DOCUMENT_TOO_LARGE', message: 'The document upload is too large.', requestId } })
+        return
+      }
+      try {
+        const rawBody = await readRawBody(request, maxDocumentBodyBytes)
+        const formRequest = new Request('http://localhost/api/analyze-document', {
+          method: 'POST',
+          headers: { 'Content-Type': contentType },
+          body: rawBody
+        })
+        const form = await formRequest.formData()
+        if ([...form.keys()].some((key) => !['file', 'useAiAnalysis'].includes(key))) {
+          writeJson(response, 400, { error: { code: 'INVALID_INPUT', message: 'The upload contains an unsupported field.', requestId } })
+          return
+        }
+        const file = form.get('file')
+        if (!file || typeof file.arrayBuffer !== 'function') {
+          writeJson(response, 400, { error: { code: 'INVALID_INPUT', message: 'Choose a document or office file to review.', requestId } })
+          return
+        }
+        const useAiAnalysis = form.get('useAiAnalysis') === 'true'
+        const documentAnalysis = await analyzeDocument({
+          bytes: Buffer.from(await file.arrayBuffer()),
+          fileName: file.name,
+          mimeType: file.type,
+          apiKey: aiProvider === 'gemini' ? process.env.GEMINI_API_KEY : process.env.GROQ_API_KEY,
+          aiProvider,
+          aiModel: aiProvider === 'gemini' ? geminiModel : groqModel,
+          useAiAnalysis
+        })
+        writeJson(response, 200, { requestId, documentAnalysis })
+      } catch (error) {
+        const code = error.status === 413 ? 'DOCUMENT_TOO_LARGE' : error.status === 415 ? 'UNSUPPORTED_DOCUMENT_TYPE' : error.status === 503 ? 'DOCUMENT_PROVIDER_ERROR' : 'INVALID_DOCUMENT'
+        writeJson(response, error.status || 400, { error: { code, message: error.message || 'The document could not be analyzed.', requestId } })
       }
       return
     }
