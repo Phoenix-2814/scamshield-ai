@@ -8,8 +8,11 @@ export function sightengineConfigured(env = process.env) {
   return Boolean(env.SIGHTENGINE_API_USER && env.SIGHTENGINE_API_SECRET)
 }
 
-export async function detectSyntheticMedia({ bytes, mimeType, fileName, mediaType, env = process.env }) {
+export async function detectSyntheticMedia({ bytes, mimeType, fileName, mediaType, duration, env = process.env }) {
   if (!sightengineConfigured(env)) return { status: 'not_configured', score: null, label: null }
+  if (mediaType === 'video' && Number.isFinite(Number(duration)) && Number(duration) >= 60) {
+    return { status: 'duration_limit', score: null, label: null }
+  }
   const [endpoint, fileField, model] = endpointByKind[mediaType] || []
   if (!endpoint) return { status: 'not_supported', score: null, label: null }
 
@@ -27,17 +30,32 @@ export async function detectSyntheticMedia({ bytes, mimeType, fileName, mediaTyp
   }
   const payload = await response.json().catch(() => null)
   if (!response.ok || payload?.status !== 'success') {
-    return { status: providerFailureStatus(response.status), score: null, label: null }
+    return { status: providerFailureStatus(response.status, payload?.error?.type), score: null, label: null }
   }
-  const scoreValue = mediaType === 'audio' ? payload?.type?.ai_speech : payload?.type?.ai_generated
+  const frameScores = mediaType === 'video' ? getVideoFrameScores(payload) : []
+  const scoreValue = mediaType === 'audio'
+    ? payload?.type?.ai_speech
+    : mediaType === 'video' && frameScores.length
+      ? frameScores.reduce((sum, item) => sum + item.score, 0) / frameScores.length
+      : payload?.type?.ai_generated
   const score = Number(scoreValue)
   if (!Number.isFinite(score) || score < 0 || score > 1) return { status: 'unavailable', score: null, label: null }
   return {
     status: 'completed',
     score,
     label: score >= 0.8 ? 'likely_ai_generated' : score <= 0.2 ? 'no_strong_ai_signal' : 'inconclusive',
-    model: mediaType === 'audio' ? 'Sightengine AI speech detection' : `Sightengine AI ${mediaType} detection`
+    model: mediaType === 'audio' ? 'Sightengine AI speech detection' : `Sightengine AI ${mediaType} detection`,
+    ...(frameScores.length ? { frameScores } : {})
   }
+}
+
+function getVideoFrameScores(payload) {
+  return (Array.isArray(payload?.data?.frames) ? payload.data.frames : [])
+    .map((frame) => ({
+      position: Number.isFinite(Number(frame?.info?.position)) ? Number(frame.info.position) : null,
+      score: Number(frame?.type?.ai_generated)
+    }))
+    .filter(({ score }) => Number.isFinite(score) && score >= 0 && score <= 1)
 }
 
 function safeFileName(fileName, mediaType) {
@@ -45,9 +63,11 @@ function safeFileName(fileName, mediaType) {
   return `upload${ext.toLowerCase()}`
 }
 
-function providerFailureStatus(httpStatus) {
-  if (httpStatus === 401 || httpStatus === 403) return 'credentials_rejected'
-  if (httpStatus === 402) return 'payment_required'
-  if (httpStatus === 429) return 'quota_reached'
+function providerFailureStatus(httpStatus, errorType) {
+  if ([401, 403].includes(httpStatus) || errorType === 'credentials_error') return 'credentials_rejected'
+  if (httpStatus === 402 || errorType === 'plan_error') return 'payment_required'
+  if (httpStatus === 429 || errorType === 'usage_limit') return 'quota_reached'
+  if (errorType === 'media_error') return 'unsupported_media'
+  if (errorType === 'argument_error') return 'invalid_request'
   return 'unavailable'
 }

@@ -297,7 +297,7 @@ const server = createServer(async (request, response) => {
           body: rawBody
         })
         const form = await formRequest.formData()
-        if ([...form.keys()].some((key) => !['file', 'frames'].includes(key))) {
+        if ([...form.keys()].some((key) => !['file', 'frames', 'duration'].includes(key))) {
           writeJson(response, 400, { error: { code: 'INVALID_INPUT', message: 'The upload contains an unsupported field.', requestId } })
           return
         }
@@ -313,12 +313,19 @@ const server = createServer(async (request, response) => {
           writeJson(response, 400, { error: { code: 'INVALID_INPUT', message: 'The media preview data is invalid.', requestId } })
           return
         }
+        const durationValue = form.get('duration')
+        const duration = durationValue === null ? null : Number(durationValue)
+        if (duration !== null && (!Number.isFinite(duration) || duration < 0 || duration > 24 * 60 * 60)) {
+          writeJson(response, 400, { error: { code: 'INVALID_INPUT', message: 'The video duration is invalid.', requestId } })
+          return
+        }
         const mediaAnalysis = await analyzeUploadedMedia({
           apiKey: process.env.GROQ_API_KEY,
           bytes: Buffer.from(await file.arrayBuffer()),
           mimeType: file.type,
           fileName: file.name,
-          frames
+          frames,
+          duration
         })
         writeJson(response, 200, { requestId, mediaAnalysis })
       } catch (error) {

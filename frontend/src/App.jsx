@@ -33,6 +33,9 @@ const mediaDetectionErrors = {
   credentials_rejected: 'Sightengine rejected its API credentials. Check SIGHTENGINE_API_USER and SIGHTENGINE_API_SECRET in the server environment.',
   payment_required: 'Sightengine requires available credits or a plan that includes this detector.',
   quota_reached: 'Sightengine usage quota reached. Check the plan quota before retrying.',
+  unsupported_media: 'Sightengine could not read this media format. Try a short MP4 video or a supported MP3, M4A, WAV, OGG, or FLAC audio file.',
+  invalid_request: 'Sightengine rejected the media request parameters. Check that the configured account has access to this detector.',
+  duration_limit: 'Sightengine’s synchronous AI-video check supports clips shorter than 60 seconds. The visual review is still shown, but no Sightengine video score is available for this longer clip.',
   unavailable: 'Sightengine could not complete the AI-origin check. Content analysis is still shown.',
   not_configured: 'Sightengine is not configured on the server; only the content analysis is available.'
 }
@@ -51,14 +54,14 @@ function canvasFrame(source) {
 }
 
 async function prepareMediaFrames(file) {
-  if (file.type.startsWith('audio/')) return []
+  if (file.type.startsWith('audio/')) return { frames: [], duration: null }
   const objectUrl = URL.createObjectURL(file)
   try {
     if (file.type.startsWith('image/')) {
       const image = new Image()
       image.src = objectUrl
       await image.decode()
-      return [canvasFrame(image)]
+      return { frames: [canvasFrame(image)], duration: null }
     }
 
     const video = document.createElement('video')
@@ -80,7 +83,7 @@ async function prepareMediaFrames(file) {
       })
       frames.push(canvasFrame(video))
     }
-    return frames
+    return { frames, duration: video.duration }
   } finally {
     URL.revokeObjectURL(objectUrl)
   }
@@ -94,6 +97,7 @@ function App() {
   const [copyState, setCopyState] = useState('')
   const [mediaFile, setMediaFile] = useState(null)
   const [mediaFrames, setMediaFrames] = useState([])
+  const [mediaDuration, setMediaDuration] = useState(null)
   const [mediaPreviewUrl, setMediaPreviewUrl] = useState('')
   const [mediaResult, setMediaResult] = useState(null)
   const [mediaError, setMediaError] = useState('')
@@ -123,6 +127,7 @@ function App() {
       setMediaError('Use a JPEG, PNG, WebP, GIF, MP4, or WebM file.')
       setMediaFile(null)
       setMediaFrames([])
+      setMediaDuration(null)
       setMediaPreviewUrl('')
       setMediaResult(null)
       return
@@ -131,6 +136,7 @@ function App() {
       setMediaError('Media files must be 20 MB or smaller.')
       setMediaFile(null)
       setMediaFrames([])
+      setMediaDuration(null)
       setMediaPreviewUrl('')
       setMediaResult(null)
       return
@@ -139,13 +145,15 @@ function App() {
     setMediaError('')
     setMediaResult(null)
     try {
-      const frames = await prepareMediaFrames(file)
+      const prepared = await prepareMediaFrames(file)
       setMediaPreviewUrl(URL.createObjectURL(file))
       setMediaFile(file)
-      setMediaFrames(frames)
+      setMediaFrames(prepared.frames)
+      setMediaDuration(prepared.duration)
     } catch (error) {
       setMediaFile(null)
       setMediaFrames([])
+      setMediaDuration(null)
       setMediaPreviewUrl('')
       setMediaResult(null)
       setMediaError(error.message || 'Could not prepare this media file.')
@@ -163,7 +171,7 @@ function App() {
       const analyzerConfig = config ?? await (configRequest.current ?? getAnalyzerConfig())
       setConfig(analyzerConfig)
       if (!analyzerConfig.mediaAnalysisAvailable) throw new Error('Media analysis is not configured. Add GROQ_API_KEY to the server environment.')
-      setMediaResult(await analyzeMediaRequest(mediaFile, mediaFrames))
+      setMediaResult(await analyzeMediaRequest(mediaFile, mediaFrames, mediaDuration))
     } catch (error) {
       setMediaError(error.message)
     } finally {
@@ -209,6 +217,7 @@ function App() {
     setResult(null)
     setMediaFile(null)
     setMediaFrames([])
+    setMediaDuration(null)
     setMediaPreviewUrl('')
     setMediaResult(null)
     setMediaError('')
@@ -222,6 +231,7 @@ function App() {
     setResult(null)
     setMediaFile(null)
     setMediaFrames([])
+    setMediaDuration(null)
     setMediaPreviewUrl('')
     setMediaResult(null)
     setMediaError('')
@@ -370,16 +380,16 @@ function App() {
                 {mediaFile && <div className="media-preview">
                   {mediaFile.type.startsWith('video/') ? <video src={mediaPreviewUrl} controls preload="metadata" /> : mediaFile.type.startsWith('audio/') ? <audio src={mediaPreviewUrl} controls preload="metadata" /> : <img src={mediaPreviewUrl} alt="Selected media preview" />}
                   <div><strong>{mediaFile.name}</strong><small>{(mediaFile.size / (1024 * 1024)).toFixed(1)} MB · {mediaFile.type.startsWith('video/') ? `${mediaFrames.length} sampled frames` : mediaFile.type.startsWith('audio/') ? 'audio clip' : 'image preview'}</small></div>
-                  <button type="button" className="media-remove" onClick={() => { setMediaFile(null); setMediaFrames([]); setMediaPreviewUrl(''); setMediaResult(null); setMediaError('') }} disabled={isAnalyzing}>Remove</button>
+                  <button type="button" className="media-remove" onClick={() => { setMediaFile(null); setMediaFrames([]); setMediaDuration(null); setMediaPreviewUrl(''); setMediaResult(null); setMediaError('') }} disabled={isAnalyzing}>Remove</button>
                 </div>}
-                <p className="media-disclosure">{config?.mediaAnalysisAvailable ? <>Selected media is sent to ScamShield and Groq for description and transcription. {config?.mediaAiDetectionAvailable && <>It is also sent to Sightengine for a separate AI-origin score; its audio model is available on paid plans.</>} Videos use sampled frames for Groq{config?.mediaAiDetectionAvailable ? ' and are submitted to Sightengine’s short-video detector' : ''}. Groq may temporarily retain inputs for abuse and reliability investigations. <a href="https://console.groq.com/docs/your-data" target="_blank" rel="noreferrer">Groq data handling</a>{config?.mediaAiDetectionAvailable && <> · <a href="https://sightengine.com/policies/privacy" target="_blank" rel="noreferrer">Sightengine privacy</a></>}.</> : <>Media review needs a server-side <code>GROQ_API_KEY</code>. Supported image, video, and audio uploads are limited to 20 MB.</>} {config?.mediaAiDetectionAvailable ? 'AI-origin scores are estimates, not proof.' : <>Add <code>SIGHTENGINE_API_USER</code> and <code>SIGHTENGINE_API_SECRET</code> to enable dedicated AI-origin scoring.</>} C2PA checks validate embedded credentials without fetching remote manifests. Audio transcription and AI-voice detection are separate checks.</p>
+                <p className="media-disclosure">{config?.mediaAnalysisAvailable ? <>Selected media is sent to ScamShield and Groq for description and transcription. {config?.mediaAiDetectionAvailable && <>It is also sent to Sightengine for a separate AI-origin score; its audio model is available on paid plans.</>} Videos use sampled frames for Groq{config?.mediaAiDetectionAvailable ? ' and clips under 60 seconds are sent to Sightengine’s video detector' : ''}. Groq may temporarily retain inputs for abuse and reliability investigations. <a href="https://console.groq.com/docs/your-data" target="_blank" rel="noreferrer">Groq data handling</a>{config?.mediaAiDetectionAvailable && <> · <a href="https://sightengine.com/policies/privacy" target="_blank" rel="noreferrer">Sightengine privacy</a></>}.</> : <>Media review needs a server-side <code>GROQ_API_KEY</code>. Supported image, video, and audio uploads are limited to 20 MB.</>} {config?.mediaAiDetectionAvailable ? 'AI-origin scores are estimates, not proof.' : <>Add <code>SIGHTENGINE_API_USER</code> and <code>SIGHTENGINE_API_SECRET</code> to enable dedicated AI-origin scoring.</>} C2PA checks validate embedded credentials without fetching remote manifests. Audio transcription and AI-voice detection are separate checks.</p>
                 {mediaError && <p className="media-error" role="alert">{mediaError}</p>}
                 <button type="button" className="primary-button media-review" onClick={handleAnalyzeMedia} disabled={!mediaFile || (!mediaFrames.length && !mediaFile.type.startsWith('audio/')) || isAnalyzing || mediaPreparing}>{isAnalyzing && mediaFile ? 'Reviewing media…' : 'Review media'} <span aria-hidden="true">↗</span></button>
               </section>
               {mediaResult && <section className="results media-results" aria-live="polite" aria-atomic="true">
                 <div className="result-topline"><div><p className="result-kicker">{mediaResult.mediaType === 'audio' ? 'GROQ WHISPER + RULE CHECKS' : `GROQ VISION${mediaResult.mediaType === 'video' ? ' + WHISPER' : ''}`}{mediaResult.aiDetection?.status === 'completed' && ' + SIGHTENGINE'}</p><h2>Media assessment</h2></div><span className={`origin-badge origin-${mediaResult.authenticity.verdict}`}>{mediaResult.aiDetection?.status === 'completed' ? `${mediaResult.mediaType === 'audio' ? mediaResult.aiDetection.label === 'likely_ai_generated' ? 'AI speech signal' : mediaResult.aiDetection.label === 'no_strong_ai_signal' ? 'No strong AI speech signal' : 'Inconclusive speech score' : mediaOriginLabels[mediaResult.aiDetection.label] || 'AI-origin estimate'} · ${(mediaResult.aiDetection.score * 100).toFixed(0)}% score` : mediaResult.mediaType === 'audio' ? 'Audio origin not assessed' : `${mediaOriginLabels[mediaResult.authenticity.verdict] || 'Origin unclear'} · ${mediaResult.authenticity.confidence} confidence`}</span></div>
                 <p className="media-summary">{mediaResult.summary || 'No clear description was returned.'}</p>
-                {mediaResult.aiDetection?.status === 'completed' && <div className="media-result-block"><h3>AI origin estimate · {mediaResult.mediaType === 'audio' ? 'speech' : mediaResult.mediaType}</h3><div className="detection-score"><strong>{(mediaResult.aiDetection.score * 100).toFixed(0)}%</strong><span>{mediaResult.aiDetection.label === 'likely_ai_generated' ? 'Strong AI-generation signal' : mediaResult.aiDetection.label === 'no_strong_ai_signal' ? 'No strong AI-generation signal' : 'Inconclusive score'}</span></div><small>{mediaResult.aiDetection.model}. This is a model score, not proof. A low score does not establish that media is authentic.</small></div>}
+                {mediaResult.aiDetection?.status === 'completed' && <div className="media-result-block"><h3>AI origin estimate · {mediaResult.mediaType === 'audio' ? 'speech' : mediaResult.mediaType}</h3><div className="detection-score"><strong>{(mediaResult.aiDetection.score * 100).toFixed(0)}%</strong><span>{mediaResult.aiDetection.label === 'likely_ai_generated' ? 'Strong AI-generation signal' : mediaResult.aiDetection.label === 'no_strong_ai_signal' ? 'No strong AI-generation signal' : 'Inconclusive score'}</span></div><small>{mediaResult.aiDetection.model}. This is a model score, not proof. A low score does not establish that media is authentic.</small>{mediaResult.aiDetection.frameScores?.length > 0 && <div className="frame-scores"><strong>Per-frame scores</strong>{mediaResult.aiDetection.frameScores.map((frame, index) => <span key={`${frame.position}-${index}`}>{frame.position === null ? `Frame ${index + 1}` : `${frame.position.toFixed(1)}s`}: {(frame.score * 100).toFixed(0)}%</span>)}</div>}</div>}
                 {mediaResult.aiDetection?.status !== 'completed' && mediaResult.aiDetection?.status !== 'not_supported' && <p className="url-check-note" role="status">{mediaDetectionErrors[mediaResult.aiDetection?.status] || 'AI-origin scoring was not available for this file.'}</p>}
                 {mediaResult.provenance?.status !== 'unavailable' && <div className="media-result-block"><h3>Content Credentials (C2PA)</h3>{mediaResult.provenance?.status === 'found' ? <><p>Manifest detected · validation: <strong>{mediaResult.provenance.validation || 'unknown'}</strong></p>{mediaResult.provenance.signer && <p>Signer: {mediaResult.provenance.signer}</p>}{mediaResult.provenance.title && <p>Title: {mediaResult.provenance.title}</p>}{mediaResult.provenance.digitalSourceTypes?.length > 0 && <p>Digital source: {mediaResult.provenance.digitalSourceTypes.join(', ')}</p>}{mediaResult.provenance.actions?.length > 0 && <p>Recorded actions: {mediaResult.provenance.actions.join(', ')}</p>}<small>A valid signature supports the recorded provenance; it does not guarantee that the depicted claims are true.</small></> : mediaResult.provenance?.status === 'not_found' ? <p>No embedded Content Credentials were found. Many authentic files do not include C2PA credentials.</p> : <p>Credentials may be present, but they could not be validated or read.</p>}</div>}
                 {mediaResult.authenticity.reasons.length > 0 && <div className="media-result-block"><h3>Origin clues</h3><ul>{mediaResult.authenticity.reasons.map((item, index) => <li key={index}>{item}</li>)}</ul></div>}

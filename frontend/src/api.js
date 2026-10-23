@@ -27,10 +27,11 @@ export async function analyzeMessageRequest(message, useAiAnalysis = false) {
   return payload.analysis
 }
 
-export async function analyzeMediaRequest(file, frames) {
+export async function analyzeMediaRequest(file, frames, duration = null) {
   const form = new FormData()
   form.append('file', file)
   form.append('frames', JSON.stringify(frames))
+  if (Number.isFinite(duration)) form.append('duration', String(duration))
   let response
   try {
     response = await fetch('/api/analyze-media', {

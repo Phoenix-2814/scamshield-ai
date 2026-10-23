@@ -11,7 +11,7 @@ const knownGeneratorMarkers = [
   'Automatic1111', 'InvokeAI', 'Leonardo.ai', 'Ideogram', 'Runway', 'Pika'
 ]
 
-export async function analyzeUploadedMedia({ apiKey, bytes, mimeType, fileName, frames }) {
+export async function analyzeUploadedMedia({ apiKey, bytes, mimeType, fileName, frames, duration }) {
   if (!apiKey) throw providerError('Media analysis is not configured. Add GROQ_API_KEY to the server environment.', 503)
   if (!Buffer.isBuffer(bytes) || bytes.length === 0) throw providerError('Choose an image, video, or audio file to review.', 400)
   if (bytes.length > maxMediaBytes) throw providerError('Media files must be 20 MB or smaller.', 413)
@@ -31,7 +31,7 @@ export async function analyzeUploadedMedia({ apiKey, bytes, mimeType, fileName, 
   const [vision, transcript, aiDetection, provenance] = await Promise.all([
     isAudio ? Promise.resolve(null) : analyzeFrames(frames, metadataIndicators, apiKey),
     isVideo || isAudio ? transcribeMedia(bytes, detectedMime, fileName, apiKey) : Promise.resolve({ text: '', status: 'not_applicable' }),
-    detectSyntheticMedia({ bytes, mimeType: detectedMime, fileName, mediaType }),
+    detectSyntheticMedia({ bytes, mimeType: detectedMime, fileName, mediaType, duration }),
     inspectC2pa(bytes, detectedMime)
   ])
 
