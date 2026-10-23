@@ -1,23 +1,89 @@
 :root {
-  font-family: 'Segoe UI', Arial, sans-serif;
-  color: #17231f;
-  background: #f6f8f5;
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  color: #f1f5f9;
+  background-color: #090d16;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   font-optical-sizing: auto;
+  line-height: 1.5;
   font-weight: 400;
-  --ink: #17231f;
-  --muted: #727d77;
-  --green: #146c50;
-  --green-dark: #104e3d;
-  --mint: #e9f2ec;
-  --line: #e4e9e5;
+
+  --bg-base: #090d16;
+  --bg-surface: #0e1526;
+  --bg-surface-elevated: #141e36;
+  --bg-surface-hover: #1c2a4a;
+  --bg-card: rgba(14, 21, 38, 0.75);
+  
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-light: rgba(255, 255, 255, 0.14);
+  --border-focus: #38bdf8;
+  
+  --text-main: #f8fafc;
+  --text-muted: #94a3b8;
+  --text-dim: #64748b;
+  
+  --brand-primary: #10b981;
+  --brand-primary-hover: #059669;
+  --brand-glow: rgba(16, 185, 129, 0.25);
+  
+  --accent-cyan: #06b6d4;
+  --accent-blue: #3b82f6;
+  --accent-amber: #f59e0b;
+  --accent-rose: #f43f5e;
 }
 
-* { box-sizing: border-box; }
-body { margin: 0; min-width: 320px; min-height: 100vh; }
-button, textarea { font: inherit; }
-button:focus-visible, a:focus-visible, textarea:focus-visible { outline: 3px solid #75bd9d; outline-offset: 3px; }
-::selection { color: #10271e; background: #cbe8d7; }
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  scroll-behavior: smooth;
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background-color: var(--bg-base);
+  color: var(--text-main);
+  background-image: 
+    radial-gradient(at 0% 0%, rgba(14, 165, 233, 0.12) 0px, transparent 50%),
+    radial-gradient(at 100% 0%, rgba(16, 185, 129, 0.12) 0px, transparent 50%),
+    radial-gradient(at 50% 100%, rgba(99, 102, 241, 0.08) 0px, transparent 60%);
+  background-attachment: fixed;
+}
+
+button, input, textarea, select {
+  font-family: inherit;
+}
+
+button:focus-visible, a:focus-visible, textarea:focus-visible, input:focus-visible {
+  outline: 2px solid var(--accent-cyan);
+  outline-offset: 2px;
+}
+
+::selection {
+  color: #ffffff;
+  background: rgba(16, 185, 129, 0.4);
+}
+
+/* Custom modern scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-base);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-light);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-dim);
+}

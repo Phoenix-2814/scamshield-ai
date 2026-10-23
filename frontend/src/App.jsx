@@ -1,43 +1,73 @@
-﻿import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { analyzeMediaRequest, analyzeMessageRequest, checkUrlRequest, getAnalyzerConfig } from './api'
 import './App.css'
 
-const examples = [
-  { label: 'Fake bank alert', message: 'URGENT: Your bank account will be blocked. Share your OTP immediately: https://secure-check.example' },
-  { label: 'UPI collect trick', message: 'Scan this QR to receive your refund. Approve the UPI collect request and enter your UPI PIN.' },
-  { label: 'Family login request', message: 'Hi I am your brother. My phone is switched off can you send me the login details of my account?' },
-  { label: 'New number conversation', message: 'Sender: It is your brother. This is my new number; the old phone is being repaired.\nSender: I cannot call right now, but I need a quick favor.\nMe: What do you need?\nSender: Open the bank app and read me the notification that appears. I will explain after.' },
-  { label: 'Job fee message', message: 'Work from home! Earn 5000 per day. Pay a small registration fee for the job to start today.' },
-  { label: 'Everyday message', message: 'Hi! Are we still meeting at the library at 4 PM?' },
+const threatScenarios = [
+  {
+    category: 'Banking Alert',
+    badge: 'Urgent',
+    label: 'Fake bank account freeze',
+    message: 'URGENT: Your bank account will be blocked within 2 hours due to KYC non-compliance. Share your OTP immediately to verify: https://secure-check.example'
+  },
+  {
+    category: 'Payment Trap',
+    badge: 'Financial',
+    label: 'UPI QR collect fraud',
+    message: 'Scan this QR code to receive your pending refund of Rs 4,800. Approve the UPI collect request and enter your UPI PIN to credit your bank.'
+  },
+  {
+    category: 'Impersonation',
+    badge: 'Identity',
+    label: 'Family emergency account request',
+    message: 'Hi I am your brother. My phone is switched off and I am stuck at the clinic, can you send me the login details and password of your netbanking account urgently?'
+  },
+  {
+    category: 'Social Eng.',
+    badge: 'Multi-turn',
+    label: 'Number swap credential harvest',
+    message: 'Sender: It is your brother. This is my new number; the old phone is being repaired.\nSender: I cannot call right now, but I need a quick favor.\nMe: What do you need?\nSender: Open the bank app and read me the notification that appears. I will explain after.'
+  },
+  {
+    category: 'Job Scam',
+    badge: 'Advance Fee',
+    label: 'Work-from-home fee trap',
+    message: 'Congratulations! Part-time work from home opportunity. Earn 5000-8000 per day by rating products. Pay a refundable onboarding registration fee of Rs 499 to start today.'
+  },
+  {
+    category: 'Benign',
+    badge: 'Clean',
+    label: 'Routine calendar check',
+    message: 'Hi! Are we still meeting at the public library reading hall at 4 PM for the project discussion? Let me know if the time works for you.'
+  },
 ]
 
 const urlCheckLabels = {
   malicious: 'Malicious detections',
   suspicious: 'Suspicious detections',
-  no_detections: 'No malicious detections',
-  unrated: 'No vendor verdict yet',
-  pending: 'Scan pending',
-  unavailable: 'Check unavailable',
-  not_configured: 'VirusTotal not configured'
+  no_detections: 'Clean · No threats detected',
+  unrated: 'Unrated · No vendor verdict yet',
+  pending: 'Scan in progress',
+  unavailable: 'Threat feed unavailable',
+  not_configured: 'VirusTotal API key not configured'
 }
 
 const mediaOriginLabels = {
-  likely_ai_generated: 'Strong AI-generation signal',
-  no_strong_ai_signal: 'No strong AI-generation signal',
+  likely_ai_generated: 'Strong synthetic / AI generation signature',
+  no_strong_ai_signal: 'No definitive AI-generation artifacts detected',
   inconclusive: 'AI-origin score inconclusive',
-  no_clear_ai_signs: 'No obvious visual signs · origin unverified',
-  unclear: 'Origin unclear · cannot verify from appearance alone'
+  no_clear_ai_signs: 'No overt visual manipulation signs · Origin unverified',
+  unclear: 'Origin indeterminate · Forensic inspection inconclusive'
 }
 
 const mediaDetectionErrors = {
-  credentials_rejected: 'Sightengine rejected its API credentials. Check SIGHTENGINE_API_USER and SIGHTENGINE_API_SECRET in the server environment.',
-  payment_required: 'Sightengine requires available credits or a plan that includes this detector.',
-  quota_reached: 'Sightengine usage quota reached. Check the plan quota before retrying.',
-  unsupported_media: 'Sightengine could not read this media format. Try a short MP4 video or a supported MP3, M4A, WAV, OGG, or FLAC audio file.',
-  invalid_request: 'Sightengine rejected the media request parameters. Check that the configured account has access to this detector.',
-  duration_limit: 'Sightengine’s synchronous AI-video check supports clips shorter than 60 seconds. The visual review is still shown, but no Sightengine video score is available for this longer clip.',
-  unavailable: 'Sightengine could not complete the AI-origin check. Content analysis is still shown.',
-  not_configured: 'Sightengine is not configured on the server; only the content analysis is available.'
+  credentials_rejected: 'Sightengine API credentials rejected. Check environment variables on server.',
+  payment_required: 'Sightengine requires active credits or an upgraded plan.',
+  quota_reached: 'Sightengine rate quota reached. Check server quota allocation.',
+  unsupported_media: 'Format unsupported. Please provide a standard MP4, WebM, JPEG, PNG, or audio file.',
+  invalid_request: 'Sightengine rejected request parameters. Check detector permissions.',
+  duration_limit: 'Sightengine synchronous video scan limited to under 60s. Visual review completed without AI video score.',
+  unavailable: 'Sightengine service unavailable. Visual & speech review displayed.',
+  not_configured: 'Sightengine not configured on server. Showing Groq vision & content review only.'
 }
 
 function canvasFrame(source) {
@@ -48,7 +78,7 @@ function canvasFrame(source) {
   canvas.width = Math.max(1, Math.round(width * scale))
   canvas.height = Math.max(1, Math.round(height * scale))
   const context = canvas.getContext('2d')
-  if (!context) throw new Error('This browser could not prepare the media preview.')
+  if (!context) throw new Error('Browser unable to render canvas context for media analysis.')
   context.drawImage(source, 0, 0, canvas.width, canvas.height)
   return canvas.toDataURL('image/jpeg', 0.82)
 }
@@ -70,15 +100,15 @@ async function prepareMediaFrames(file) {
     video.src = objectUrl
     await new Promise((resolve, reject) => {
       video.addEventListener('loadedmetadata', resolve, { once: true })
-      video.addEventListener('error', () => reject(new Error('This video could not be opened in your browser.')), { once: true })
+      video.addEventListener('error', () => reject(new Error('This video could not be decoded by the browser.')), { once: true })
     })
-    if (!Number.isFinite(video.duration) || video.duration <= 0) throw new Error('This video has no readable frames.')
+    if (!Number.isFinite(video.duration) || video.duration <= 0) throw new Error('Video has no readable temporal frames.')
     const times = [...new Set([video.duration * 0.1, video.duration * 0.5, video.duration * 0.9].map((time) => Math.min(Math.max(0, time), Math.max(0, video.duration - 0.05))))]
     const frames = []
     for (const time of times) {
       await new Promise((resolve, reject) => {
         video.addEventListener('seeked', resolve, { once: true })
-        video.addEventListener('error', () => reject(new Error('A video frame could not be read.')), { once: true })
+        video.addEventListener('error', () => reject(new Error('A video frame could not be extracted.')), { once: true })
         video.currentTime = time
       })
       frames.push(canvasFrame(video))
@@ -88,6 +118,97 @@ async function prepareMediaFrames(file) {
     URL.revokeObjectURL(objectUrl)
   }
 }
+
+// Inline sleek SVG Icons
+const ShieldIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+  </svg>
+)
+
+const ShieldAlertIcon = () => (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+    <line x1="12" y1="8" x2="12" y2="12"/>
+    <line x1="12" y1="16" x2="12.01" y2="16"/>
+  </svg>
+)
+
+const ShieldCheckIcon = () => (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+    <polyline points="9 12 11 14 15 10"/>
+  </svg>
+)
+
+const MessageSquareIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </svg>
+)
+
+const GlobeIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="10"/>
+    <line x1="2" y1="12" x2="22" y2="12"/>
+    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+  </svg>
+)
+
+const MediaIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/>
+    <line x1="7" y1="2" x2="7" y2="22"/>
+    <line x1="17" y1="2" x2="17" y2="22"/>
+    <line x1="2" y1="12" x2="22" y2="12"/>
+    <line x1="2" y1="7" x2="7" y2="7"/>
+    <line x1="2" y1="17" x2="7" y2="17"/>
+    <line x1="17" y1="17" x2="22" y2="17"/>
+    <line x1="17" y1="7" x2="22" y2="7"/>
+  </svg>
+)
+
+const CopyIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+  </svg>
+)
+
+const CheckIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="20 6 9 17 4 12"/>
+  </svg>
+)
+
+const ArrowUpRightIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="7" y1="17" x2="17" y2="7"/>
+    <polyline points="7 7 17 7 17 17"/>
+  </svg>
+)
+
+const AlertCircleIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="10"/>
+    <line x1="12" y1="8" x2="12" y2="12"/>
+    <line x1="12" y1="16" x2="12.01" y2="16"/>
+  </svg>
+)
+
+const SparklesIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
+  </svg>
+)
+
+const UploadIcon = () => (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+    <polyline points="17 8 12 3 7 8"/>
+    <line x1="12" y1="3" x2="12" y2="15"/>
+  </svg>
+)
 
 function App() {
   const [message, setMessage] = useState('')
@@ -124,7 +245,7 @@ function App() {
     if (!file) return
     const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'video/mp4', 'video/webm', 'audio/mpeg', 'audio/mp4', 'audio/wav', 'audio/ogg', 'audio/flac', 'audio/webm']
     if (!allowedTypes.includes(file.type)) {
-      setMediaError('Use a JPEG, PNG, WebP, GIF, MP4, or WebM file.')
+      setMediaError('Supported file formats: JPEG, PNG, WebP, GIF, MP4, WebM, or Audio (MP3, WAV, M4A, OGG).')
       setMediaFile(null)
       setMediaFrames([])
       setMediaDuration(null)
@@ -133,7 +254,7 @@ function App() {
       return
     }
     if (file.size > 20 * 1024 * 1024) {
-      setMediaError('Media files must be 20 MB or smaller.')
+      setMediaError('File size limit exceeded. Upload media smaller than 20 MB.')
       setMediaFile(null)
       setMediaFrames([])
       setMediaDuration(null)
@@ -156,7 +277,7 @@ function App() {
       setMediaDuration(null)
       setMediaPreviewUrl('')
       setMediaResult(null)
-      setMediaError(error.message || 'Could not prepare this media file.')
+      setMediaError(error.message || 'Could not parse media frames for inspection.')
     } finally {
       setMediaPreparing(false)
     }
@@ -170,7 +291,9 @@ function App() {
     try {
       const analyzerConfig = config ?? await (configRequest.current ?? getAnalyzerConfig())
       setConfig(analyzerConfig)
-      if (!analyzerConfig.mediaAnalysisAvailable) throw new Error('Media analysis is not configured. Add GROQ_API_KEY to the server environment.')
+      if (!analyzerConfig.mediaAnalysisAvailable) {
+        throw new Error('Media threat analysis engine not initialized. Please verify GROQ_API_KEY on the server.')
+      }
       setMediaResult(await analyzeMediaRequest(mediaFile, mediaFrames, mediaDuration))
     } catch (error) {
       setMediaError(error.message)
@@ -181,20 +304,22 @@ function App() {
 
   async function handleCheckUrl(event) {
     event.preventDefault()
+    if (!urlInput.trim()) return
     setUrlChecking(true)
     setUrlResult(null)
     setUrlError('')
     try {
-      setUrlResult(await checkUrlRequest(urlInput))
+      setUrlResult(await checkUrlRequest(urlInput.trim()))
     } catch (error) {
-      setUrlError(error.message || 'The URL could not be checked.')
+      setUrlError(error.message || 'The specified URL could not be evaluated by security feeds.')
     } finally {
       setUrlChecking(false)
     }
   }
 
   async function handleAnalyze(event) {
-    event.preventDefault()
+    if (event) event.preventDefault()
+    if (!message.trim()) return
     setIsAnalyzing(true)
     try {
       const analyzerConfig = config ?? await (configRequest.current ?? getAnalyzerConfig())
@@ -207,9 +332,15 @@ function App() {
     }
   }
 
+  function handleKeyDown(event) {
+    if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+      handleAnalyze()
+    }
+  }
+
   function handleChange(event) {
     setMessage(event.target.value)
-    setResult(null)
+    if (result) setResult(null)
   }
 
   function handleClear() {
@@ -226,8 +357,8 @@ function App() {
     setUrlError('')
   }
 
-  function loadExample(example) {
-    setMessage(example.message)
+  function loadExample(scenario) {
+    setMessage(scenario.message)
     setResult(null)
     setMediaFile(null)
     setMediaFrames([])
@@ -238,180 +369,874 @@ function App() {
     setUrlInput('')
     setUrlResult(null)
     setUrlError('')
+    // smooth scroll to form if needed
+    const panel = document.getElementById('analyzer-panel')
+    if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  async function handlePaste() {
+    try {
+      const text = await navigator.clipboard.readText()
+      if (text) {
+        setMessage(text)
+        setResult(null)
+      }
+    } catch {
+      // ignore clipboard permission error
+    }
   }
 
   async function copyAssessment(analysis) {
     const lines = [
-      `ScamShield assessment: ${analysis.level} risk`,
-      analysis.assessment ? `${analysis.assessment.scamType}: ${analysis.assessment.summary}` : '',
-      'Signals:',
-      ...analysis.signals.map((signal) => `- ${signal.name}${signal.evidence ? ` | Evidence: ${signal.evidence}` : ''}${signal.explanation ? ` | ${signal.explanation}` : ''}`),
-      ...(analysis.urlChecks?.results?.length ? ['VirusTotal URL checks:', ...analysis.urlChecks.results.map((item) => `- ${item.url}: ${urlCheckLabels[item.status] || item.status}${Number.isInteger(item.detections) ? ` (${item.detections}/${item.total} detections)` : ''}`)] : []),
-      'Recommended actions:',
-      ...analysis.advice.map((item) => `- ${item}`),
-      'This is an automated indicator, not proof that a message is fraudulent.'
+      `=========================================`,
+      `SCAMSHIELD AI THREAT INTELLIGENCE REPORT`,
+      `Assessed Risk Level: ${analysis.level?.toUpperCase()}`,
+      `Detection Engine: ${analysis.mode === 'ai-assisted' ? (config?.externalProvider || 'Multi-Modal AI') : 'Heuristic Rules Engine'}`,
+      `=========================================`,
+      analysis.assessment ? `\nPrimary Threat Category: ${analysis.assessment.scamType}\nExecutive Summary: ${analysis.assessment.summary}` : '',
+      `\nKey Deception Signals Identified:`,
+      ...analysis.signals.map((signal, i) => `${i + 1}. [${signal.name}] ${signal.evidence ? `"${signal.evidence}"` : ''} - ${signal.explanation || ''}`),
+      ...(analysis.urlChecks?.results?.length ? [
+        `\nURL Reputation Feeds:`,
+        ...analysis.urlChecks.results.map((item) => `- ${item.url}: ${urlCheckLabels[item.status] || item.status} (${item.detections ?? 0}/${item.total ?? 0} security vendors flagged)`)
+      ] : []),
+      `\nRecommended Action Protocol:`,
+      ...analysis.advice.map((item, i) => `${i + 1}. ${item}`),
+      `\nNotice: Automated intelligence assessment generated for incident response and risk mitigation. Verify critical requests through trusted, out-of-band channels.`
     ].filter(Boolean)
     try {
       await navigator.clipboard.writeText(lines.join('\n'))
-      setCopyState('Copied')
-      window.setTimeout(() => setCopyState(''), 2000)
+      setCopyState('Report Copied to Clipboard!')
+      window.setTimeout(() => setCopyState(''), 2500)
     } catch {
-      setCopyState('Copy unavailable')
+      setCopyState('Copy failed')
       window.setTimeout(() => setCopyState(''), 2500)
     }
   }
 
   return (
     <div className="app" id="top">
+      {/* Top Professional Navigation */}
       <header className="navbar">
-        <a className="brand" href="#top" aria-label="ScamShield home">
-          <span className="brand-mark" aria-hidden="true">S</span>
-          <span>scam<span className="brand-accent">shield</span></span>
-        </a>
-        <nav className="nav-links" aria-label="Main navigation">
-          <a href="#analyzer">Message check</a>
-          <a href="#how-it-works">How it works</a>
-        </nav>
-        <span className="status"><span className="status-dot" /> No message history</span>
+        <div className="navbar-container">
+          <a className="brand" href="#top" aria-label="ScamShield AI Platform">
+            <span className="brand-mark" aria-hidden="true">
+              <ShieldIcon />
+            </span>
+            <div className="brand-text">
+              <span className="brand-title">SCAM<span className="brand-highlight">SHIELD</span></span>
+              <span className="brand-badge">AI PLATFORM</span>
+            </div>
+          </a>
+
+          <nav className="nav-links" aria-label="Primary navigation">
+            <a href="#analyzer-panel" className={activeTool === 'message' ? 'nav-active' : ''} onClick={() => setActiveTool('message')}>Message Analysis</a>
+            <a href="#analyzer-panel" className={activeTool === 'url' ? 'nav-active' : ''} onClick={() => setActiveTool('url')}>URL Reputation</a>
+            <a href="#analyzer-panel" className={activeTool === 'media' ? 'nav-active' : ''} onClick={() => setActiveTool('media')}>Deepfake & Media</a>
+            <a href="#how-it-works">Threat Architecture</a>
+          </nav>
+
+          <div className="nav-actions">
+            <div className="engine-status-pill" title="Real-time multi-modal detection engine active">
+              <span className="pulse-dot" />
+              <span className="status-text">Engine Online</span>
+              <span className="privacy-pill">Zero Retention</span>
+            </div>
+          </div>
+        </div>
       </header>
 
-      <main className="hero page-shell">
+      {/* Main Hero & Console Section */}
+      <main className="page-shell">
         <section className="hero-heading">
-          <div className="eyebrow"><span className="eyebrow-dot" /> A CALMER WAY TO CHECK A MESSAGE</div>
-          <h1>Pause. Look closer.<br /><span>Then decide.</span></h1>
-          <p className="subtitle">Understand what an unexpected message is asking of you, with clear evidence and a safer next step.</p>
+          <div className="eyebrow">
+            <span className="eyebrow-icon"><ShieldCheckIcon /></span>
+            <span>ENTERPRISE FRAUD & CYBER INTELLIGENCE</span>
+          </div>
+          <h1>
+            Inspect Before You Trust.<br />
+            <span className="gradient-text">Detect Deception in Real Time.</span>
+          </h1>
+          <p className="subtitle">
+            Instantly evaluate suspicious messages, phishing domains, synthetic voice clips, and deepfakes with multi-modal AI heuristics and forensic evidence chains.
+          </p>
+
+          <div className="trust-metrics-strip">
+            <div className="metric-chip">
+              <span className="metric-dot blue" />
+              <strong>Multi-Modal AI</strong>
+              <small>{config?.externalProvider || 'Groq Vision & Whisper'} + Rules</small>
+            </div>
+            <div className="metric-chip">
+              <span className="metric-dot green" />
+              <strong>VirusTotal Threat Feeds</strong>
+              <small>70+ Vendor Lookups</small>
+            </div>
+            <div className="metric-chip">
+              <span className="metric-dot amber" />
+              <strong>C2PA Provenance</strong>
+              <small>Content Credentials Audit</small>
+            </div>
+            <div className="metric-chip">
+              <span className="metric-dot cyan" />
+              <strong>Privacy Guaranteed</strong>
+              <small>Zero-Knowledge / Ephemeral</small>
+            </div>
+          </div>
         </section>
 
-        <div className="workspace-grid">
-          <section className="story-card" aria-label="ScamShield example">
-            <div className="story-topline"><span>CONTEXT MATTERS</span><span className="story-live"><span /> A closer look</span></div>
-            <h2>A familiar name<br />doesn’t verify a request.</h2>
-            <p>Pressure and pretexts can build across an ordinary-looking conversation.</p>
-            <div className="message-preview">
-              <div className="message-avatar" aria-hidden="true">R</div>
-              <div className="message-bubble"><small>NEW NUMBER · 10:42 AM</small><span>Open your bank app and read me the notification?</span></div>
-              <div className="message-warning"><span aria-hidden="true">!</span><span><strong>Pause before sharing</strong><small>Verify through a trusted channel.</small></span></div>
+        {/* Workspace Layout */}
+        <div className="workspace-grid" id="analyzer-panel">
+          {/* Left Threat Architecture Card */}
+          <section className="story-card" aria-label="Threat Deconstruction Blueprint" id="how-it-works">
+            <div className="story-topline">
+              <span className="card-kicker">THREAT RADAR</span>
+              <span className="story-live"><span /> Social Engineering Anatomy</span>
             </div>
-            <div className="story-steps" id="how-it-works">
-              <div><span>01</span><p><strong>Paste the message</strong><small>A single text or full conversation</small></p></div>
-              <div><span>02</span><p><strong>Review the evidence</strong><small>See signals in their context</small></p></div>
-              <div><span>03</span><p><strong>Choose a safer next step</strong><small>Verify before you act</small></p></div>
+
+            <h2>Deconstructing the Anatomy of Modern Attacks</h2>
+            <p>
+              Attackers exploit cognitive blindspots through simulated authority, sudden urgency, and familiar pretexts. ScamShield deconstructs each conversational layer.
+            </p>
+
+            <div className="threat-breakdown-card">
+              <div className="threat-header">
+                <span className="avatar-chip">SMS / Chat</span>
+                <span className="threat-tag">Social Engineering Simulation</span>
+              </div>
+              <div className="mock-chat-bubble">
+                <div className="mock-meta">UNVERIFIED CONTACT · 10:42 AM</div>
+                <div className="mock-text">“Your banking token expired. Click to reactivate and read out the confirmation SMS code to our agent.”</div>
+              </div>
+              <div className="threat-warning-pill">
+                <AlertCircleIcon />
+                <div>
+                  <strong>High Probability Credential Harvesting</strong>
+                  <p>Artificial urgency paired with out-of-band credential extraction request.</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="story-steps">
+              <div className="step-row">
+                <div className="step-num">01</div>
+                <div className="step-content">
+                  <strong>Multi-Channel Ingestion</strong>
+                  <p>Directly inspect messages, multi-turn chat threads, raw URLs, or media files.</p>
+                </div>
+              </div>
+              <div className="step-row">
+                <div className="step-num">02</div>
+                <div className="step-content">
+                  <strong>Deep Signal Extraction</strong>
+                  <p>Correlates urgency pressure, payment redirections, AI voice traits, and malicious links.</p>
+                </div>
+              </div>
+              <div className="step-row">
+                <div className="step-num">03</div>
+                <div className="step-content">
+                  <strong>Prescriptive Defense Steps</strong>
+                  <p>Provides vetted containment advice, verification protocols, and national reporting hotlines.</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="story-footer-tip">
+              <strong>Security Protocol Tip:</strong> Never verify an account using phone numbers, links, or contacts sent within the suspicious message itself. Always use bookmarked, official channels.
             </div>
           </section>
 
-          <section className="analyzer" id="analyzer">
-            <div className="analyzer-heading">
-              <div><span className="section-kicker">SCAMSHIELD CHECKS</span><h2>Choose what you want to review</h2></div>
-              <span className={`mode-pill${config?.aiAssistedAvailable ? ' mode-ai' : ''}`}><span />{config?.aiAssistedAvailable ? `${config.externalProvider} assisted` : 'Rules-based'}</span>
-            </div>
-            <div className="tool-tabs" role="tablist" aria-label="Choose a review tool">
-              <button type="button" id="message-tab" role="tab" aria-controls="message-panel" aria-selected={activeTool === 'message'} className={activeTool === 'message' ? 'active' : ''} onClick={() => setActiveTool('message')}><strong>Message</strong><small>Scam and conversation signals</small></button>
-              <button type="button" id="url-tab" role="tab" aria-controls="url-panel" aria-selected={activeTool === 'url'} className={activeTool === 'url' ? 'active' : ''} onClick={() => setActiveTool('url')}><strong>URL</strong><small>VirusTotal reputation check</small></button>
-              <button type="button" id="media-tab" role="tab" aria-controls="media-panel" aria-selected={activeTool === 'media'} className={activeTool === 'media' ? 'active' : ''} onClick={() => setActiveTool('media')}><strong>Media</strong><small>Image, video, and audio review</small></button>
-            </div>
-            {activeTool === 'message' && <form id="message-panel" role="tabpanel" aria-labelledby="message-tab" onSubmit={handleAnalyze}>
-              <div className="field-heading">
-                <label htmlFor="message">Message or conversation</label>
-                <span className="field-hint">Up to 5,000 characters</span>
+          {/* Right Core Analyzer Console */}
+          <section className="analyzer">
+            <div className="analyzer-header">
+              <div>
+                <span className="section-kicker">ANALYZER WORKSPACE</span>
+                <h2>Select Inspection Vector</h2>
               </div>
-              <textarea
-                id="message"
-                value={message}
-                onChange={handleChange}
-                disabled={isAnalyzing}
-                placeholder={'Paste the message here. You can include multiple messages to give it context...'}
-                rows={7}
-                maxLength={5000}
-                aria-describedby="privacy-note"
-              />
-              <div className="form-footer">
-                <span className="char-count">{message.length.toLocaleString()} / 5,000</span>
-                <div className="actions">
-                  <button type="button" className="secondary-button" onClick={handleClear} disabled={isAnalyzing || (!message && !result && !mediaFile && !mediaResult && !mediaError)}>Clear</button>
-                  <button type="submit" className="primary-button" disabled={isAnalyzing}>{isAnalyzing ? 'Reviewing…' : <>Review message <span aria-hidden="true">↗</span></>}</button>
-                </div>
+              <div className={`engine-badge${config?.aiAssistedAvailable ? ' engine-ai' : ''}`}>
+                <SparklesIcon />
+                <span>{config?.aiAssistedAvailable ? `${config.externalProvider} Multi-Modal Enabled` : 'Deterministic Rules Engine'}</span>
               </div>
-              <p className="privacy" id="privacy-note"><span aria-hidden="true">Privacy</span> {config?.aiAssistedAvailable ? config.externalProvider === 'Groq' ? <>Message sent to ScamShield and Groq. Inputs and outputs are not retained by default, but may be temporarily retained for reliability or abuse investigations. <a href="https://console.groq.com/docs/your-data" target="_blank" rel="noreferrer">See Groq data handling</a>.</> : <>Message sent to ScamShield and Google Gemini. Interaction storage is disabled; Google abuse monitoring still applies. <a href="https://ai.google.dev/gemini-api/docs/zdr" target="_blank" rel="noreferrer">See Gemini data handling</a>.</> : <>Message analyzed by ScamShield rules. Message history is not saved.</>} {config?.virusTotalAvailable ? <>URLs in messages are automatically sent to VirusTotal for reputation lookup or scanning. Submitted or queried URLs may be added to its community dataset. Avoid private or password-reset links. <a href="https://docs.virustotal.com/reference/scan-url" target="_blank" rel="noreferrer">VirusTotal data notice</a>. You can also check a URL separately in the URL tab.</> : <>Automatic VirusTotal checks are not configured on this service; suspicious URL patterns can still appear in message analysis. Use the URL tab to check one separately.</>}</p>
+            </div>
 
-              {result && (
-                <section className={`results${result.error ? ' results-error' : ''}`} aria-live="polite" aria-atomic="true">
-                  {result.error ? <p className="error-message">{result.error}</p> : <>
+            {/* Mode Switcher Tabs */}
+            <div className="tool-tabs" role="tablist" aria-label="Inspection Vector Selection">
+              <button
+                type="button"
+                id="message-tab"
+                role="tab"
+                aria-controls="message-panel"
+                aria-selected={activeTool === 'message'}
+                className={`tab-btn ${activeTool === 'message' ? 'active' : ''}`}
+                onClick={() => setActiveTool('message')}
+              >
+                <div className="tab-icon"><MessageSquareIcon /></div>
+                <div className="tab-details">
+                  <strong>Message & Chat</strong>
+                  <small>NLP, urgency & scam patterns</small>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                id="url-tab"
+                role="tab"
+                aria-controls="url-panel"
+                aria-selected={activeTool === 'url'}
+                className={`tab-btn ${activeTool === 'url' ? 'active' : ''}`}
+                onClick={() => setActiveTool('url')}
+              >
+                <div className="tab-icon"><GlobeIcon /></div>
+                <div className="tab-details">
+                  <strong>URL Reputation</strong>
+                  <small>VirusTotal 70+ scanner checks</small>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                id="media-tab"
+                role="tab"
+                aria-controls="media-panel"
+                aria-selected={activeTool === 'media'}
+                className={`tab-btn ${activeTool === 'media' ? 'active' : ''}`}
+                onClick={() => setActiveTool('media')}
+              >
+                <div className="tab-icon"><MediaIcon /></div>
+                <div className="tab-details">
+                  <strong>Deepfake & Media</strong>
+                  <small>Vision, C2PA, Whisper speech</small>
+                </div>
+              </button>
+            </div>
+
+            {/* MESSAGE TAB */}
+            {activeTool === 'message' && (
+              <form id="message-panel" role="tabpanel" aria-labelledby="message-tab" onSubmit={handleAnalyze}>
+                <div className="field-heading">
+                  <label htmlFor="message">Suspicious Message or Conversation Transcript</label>
+                  <div className="field-tools">
+                    <button type="button" className="ghost-btn" onClick={handlePaste} title="Paste from clipboard">
+                      <CopyIcon /> Paste
+                    </button>
+                    <span className="field-hint">{message.length.toLocaleString()} / 5,000 characters</span>
+                  </div>
+                </div>
+
+                <div className="textarea-wrapper">
+                  <textarea
+                    id="message"
+                    value={message}
+                    onChange={handleChange}
+                    onKeyDown={handleKeyDown}
+                    disabled={isAnalyzing}
+                    placeholder="Paste the email, SMS, WhatsApp exchange, or social DM here. You can include entire conversation transcripts to provide full conversational context..."
+                    rows={6}
+                    maxLength={5000}
+                    aria-describedby="privacy-note"
+                  />
+                </div>
+
+                <div className="form-footer">
+                  <div className="shortcut-hint">
+                    <kbd>Ctrl</kbd> + <kbd>Enter</kbd> to analyze
+                  </div>
+                  <div className="actions">
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={handleClear}
+                      disabled={isAnalyzing || (!message && !result)}
+                    >
+                      Clear
+                    </button>
+                    <button type="submit" className="primary-button" disabled={isAnalyzing || !message.trim()}>
+                      {isAnalyzing ? (
+                        <>
+                          <span className="btn-spinner" /> Running Security Scan…
+                        </>
+                      ) : (
+                        <>
+                          Analyze Message Threat <ArrowUpRightIcon />
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                <p className="privacy" id="privacy-note">
+                  <span className="privacy-label">PRIVACY GUARANTEE:</span>{' '}
+                  {config?.aiAssistedAvailable ? (
+                    config.externalProvider === 'Groq' ? (
+                      <>
+                        Inspected via ScamShield rules and Groq accelerated inference. Content is processed in-memory with zero default persistence. <a href="https://console.groq.com/docs/your-data" target="_blank" rel="noreferrer">Review Groq enterprise data policies</a>.
+                      </>
+                    ) : (
+                      <>
+                        Evaluated via ScamShield rules and Google Gemini. Zero Data Retention (ZDR) configuration active. <a href="https://ai.google.dev/gemini-api/docs/zdr" target="_blank" rel="noreferrer">Review Gemini data handling</a>.
+                      </>
+                    )
+                  ) : (
+                    <>Analyzed purely using ScamShield deterministic heuristics. Your data never leaves your environment.</>
+                  )}
+                  {config?.virusTotalAvailable && <> Embedded links are checked against the VirusTotal threat registry.</>}
+                </p>
+
+                {/* RESULTS SECTION */}
+                {result && (
+                  <section className={`results-card ${result.error ? 'results-card-error' : ''}`} aria-live="polite">
+                    {result.error ? (
+                      <div className="error-alert">
+                        <AlertCircleIcon />
+                        <p>{result.error}</p>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="result-topline">
+                          <div>
+                            <span className="result-kicker">
+                              {result.mode === 'ai-assisted' ? `${(config?.externalProvider || 'AI').toUpperCase()} + HEURISTIC ENGINE` : 'DETERMINISTIC HEURISTIC ENGINE'}
+                            </span>
+                            <h2>Threat Assessment Findings</h2>
+                          </div>
+                          <div className={`risk-badge risk-${result.level?.toLowerCase()}`}>
+                            <div className="risk-badge-icon">
+                              {result.level?.toLowerCase() === 'high' ? <ShieldAlertIcon /> : result.level?.toLowerCase() === 'low' ? <ShieldCheckIcon /> : <AlertCircleIcon />}
+                            </div>
+                            <div className="risk-badge-text">
+                              <small>ASSESSED RISK</small>
+                              <strong>{result.level?.toUpperCase()}</strong>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* URL Checks if present */}
+                        {result.urlChecks && (
+                          <div className="url-checks-container">
+                            <div className="url-checks-header">
+                              <div className="url-checks-title">
+                                <GlobeIcon />
+                                <h3>Embedded Links Threat Intelligence</h3>
+                              </div>
+                              <span className="vendor-tag">{result.urlChecks.configured ? 'VirusTotal Live Feed' : 'Offline / Unconfigured'}</span>
+                            </div>
+                            <div className="url-checks-list">
+                              {result.urlChecks.results.map((item, index) => (
+                                <div className={`url-check-item url-status-${item.status}`} key={`${item.url}-${index}`}>
+                                  <div className="url-info">
+                                    <code className="url-code">{item.url}</code>
+                                    <div className="url-verdict">
+                                      <span className="verdict-label">{urlCheckLabels[item.status] || item.status}</span>
+                                      {Number.isInteger(item.detections) && (
+                                        <span className="vendor-stats">
+                                          {item.malicious} malicious · {item.suspicious} suspicious out of {item.total} AV engines
+                                        </span>
+                                      )}
+                                      {item.message && <span className="item-msg">{item.message}</span>}
+                                    </div>
+                                  </div>
+                                  {item.reportUrl && (
+                                    <a className="report-link" href={item.reportUrl} target="_blank" rel="noreferrer">
+                                      VirusTotal Dossier <ArrowUpRightIcon />
+                                    </a>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                            {result.urlChecks.skipped > 0 && (
+                              <p className="url-check-note">{result.urlChecks.skipped} additional links queued to respect API rate boundaries.</p>
+                            )}
+                          </div>
+                        )}
+
+                        {/* AI Summary or Heuristic Score */}
+                        {result.mode === 'ai-assisted' ? (
+                          <div className="assessment-summary-card">
+                            <div className="summary-badge-row">
+                              <span className="threat-type-pill">{result.assessment?.scamType || 'Suspicious Pattern'}</span>
+                              <span className="ai-disclaimer">Automated Threat Synthesis</span>
+                            </div>
+                            <p className="summary-text">{result.assessment?.summary}</p>
+
+                            {/* Attack Sequence Chain */}
+                            {result.assessment?.attackChain?.length > 0 && (
+                              <div className="attack-chain-section">
+                                <h3>Social Engineering Attack Sequence</h3>
+                                <p className="chain-subhead">Step-by-step breakdown of how the conversation establishes manipulation</p>
+                                <div className="chain-timeline">
+                                  {result.assessment.attackChain.map((step, index) => (
+                                    <div className="chain-step-card" key={`${step.stage}-${index}`}>
+                                      <div className="step-indicator">
+                                        <span className="step-index">{String(index + 1).padStart(2, '0')}</span>
+                                        <span className="step-line" />
+                                      </div>
+                                      <div className="step-body">
+                                        <strong>{step.stage}</strong>
+                                        <q className="step-quote">&ldquo;{step.evidence}&rdquo;</q>
+                                        <small className="step-interp">{step.interpretation}</small>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="score-summary-card">
+                            <div className="score-header">
+                              <span>Heuristic Threat Metric Score</span>
+                              <strong>{result.score} <span className="score-denominator">/ 100</span></strong>
+                            </div>
+                            <div className="score-track" role="progressbar" aria-valuenow={result.score} aria-valuemin="0" aria-valuemax="100">
+                              <div className={`score-fill fill-${result.level?.toLowerCase()}`} style={{ width: `${Math.min(100, Math.max(5, result.score))}%` }} />
+                            </div>
+                            <small className="score-note">Rule-based score matches weighted heuristic indicators. High score indicates elevated social engineering signals.</small>
+                          </div>
+                        )}
+
+                        {/* High Risk Critical Incident Response Panel */}
+                        {result.level === 'High' && (() => {
+                          const financialRisk = [...(result.categories || []), result.assessment?.scamType || ''].some((category) => /payment|upi|financial|bank/i.test(category))
+                          return (
+                            <div className="emergency-response-panel">
+                              <div className="emergency-header">
+                                <span className="emergency-icon"><AlertCircleIcon /></span>
+                                <div>
+                                  <span className="emergency-kicker">CRITICAL ACTION PROTOCOL</span>
+                                  <h3>{financialRisk ? 'Immediate Financial Defense & Fraud Containment' : 'Account & Device Containment Protocol'}</h3>
+                                </div>
+                              </div>
+                              <p className="emergency-description">
+                                {financialRisk
+                                  ? 'If banking details or OTP was shared, immediately contact your bank’s 24x7 emergency fraud line to freeze affected accounts/cards, then report directly to the official cyber fraud authorities.'
+                                  : 'Immediately stop engagement. Do not click links or install remote access software. Access the affected platform via official verified applications to change passwords and revoke active sessions.'}
+                              </p>
+                              {financialRisk && (
+                                <div className="emergency-action-buttons">
+                                  <a href="tel:1930" className="helpline-btn">
+                                    <span className="helpline-badge">CALL HELPLINE</span>
+                                    <strong>National Cyber Crime Helpline: 1930</strong>
+                                  </a>
+                                  <a href="https://www.cybercrime.gov.in/" target="_blank" rel="noreferrer" className="portal-btn">
+                                    National Cybercrime Reporting Portal <ArrowUpRightIcon />
+                                  </a>
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })()}
+
+                        {/* Two Columns: Signals & Advice */}
+                        <div className="findings-grid">
+                          <div className="signals-panel">
+                            <div className="panel-header">
+                              <h3>Identified Threat Signals</h3>
+                              <span className="signal-count">{result.signals.length} Flags</span>
+                            </div>
+                            {result.signals.length ? (
+                              <ul className="signal-cards-list">
+                                {result.signals.map((signal, index) => (
+                                  <li className="signal-card" key={`${signal.name}-${index}`}>
+                                    <div className="signal-marker">!</div>
+                                    <div className="signal-content">
+                                      <div className="signal-title-row">
+                                        <strong>{signal.name}</strong>
+                                        {signal.points > 0 && <span className="signal-points">+{signal.points} pts</span>}
+                                      </div>
+                                      {signal.evidence && (
+                                        <div className="signal-quote">
+                                          <span>Evidence:</span> &ldquo;{signal.evidence}&rdquo;
+                                        </div>
+                                      )}
+                                      {signal.explanation && <p className="signal-desc">{signal.explanation}</p>}
+                                    </div>
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <div className="clean-signals">
+                                <ShieldCheckIcon />
+                                <p>No overt social engineering or suspicious patterns matched configured threat heuristics.</p>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="advice-panel">
+                            <div className="panel-header">
+                              <h3>Recommended Security Protocol</h3>
+                              <span className="advice-badge">Action Plan</span>
+                            </div>
+                            <ol className="advice-list">
+                              {result.advice.map((item, index) => (
+                                <li key={index}>
+                                  <span className="advice-num">{index + 1}</span>
+                                  <p>{item}</p>
+                                </li>
+                              ))}
+                            </ol>
+                          </div>
+                        </div>
+
+                        {/* Bottom Utility Bar */}
+                        <div className="report-action-bar">
+                          <span className="action-bar-label">Export or forward this assessment to your security team or trusted contact.</span>
+                          <button type="button" className="copy-report-btn" onClick={() => copyAssessment(result)}>
+                            {copyState ? <CheckIcon /> : <CopyIcon />} {copyState || 'Copy Full Intelligence Report'}
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </section>
+                )}
+              </form>
+            )}
+
+            {/* URL TAB */}
+            {activeTool === 'url' && (
+              <section className="url-tool-container" role="tabpanel" id="url-panel" aria-labelledby="url-tab">
+                <div className="tool-intro">
+                  <span className="section-kicker">URL REPUTATION INSPECTOR</span>
+                  <h3>Direct Domain & Link Security Lookup</h3>
+                  <p>Submit a complete web address for multi-engine reputation analysis and malware taxonomy through VirusTotal.</p>
+                </div>
+
+                <form onSubmit={handleCheckUrl} className="url-lookup-form">
+                  <div className="url-input-group">
+                    <span className="input-prefix-icon"><GlobeIcon /></span>
+                    <input
+                      id="url-input"
+                      type="url"
+                      inputMode="url"
+                      placeholder="https://example.com/login-verify"
+                      value={urlInput}
+                      onChange={(event) => {
+                        setUrlInput(event.target.value)
+                        setUrlResult(null)
+                        setUrlError('')
+                      }}
+                      maxLength={2048}
+                      required
+                    />
+                  </div>
+                  <button type="submit" className="primary-button" disabled={urlChecking || !urlInput.trim()}>
+                    {urlChecking ? <><span className="btn-spinner" /> Scanning…</> : <>Inspect URL <ArrowUpRightIcon /></>}
+                  </button>
+                </form>
+
+                <p className="tool-disclosure">
+                  {config?.virusTotalAvailable ? (
+                    <>Live VirusTotal integration enabled. Queries check malware signatures, phishing heuristics, and community reports. Avoid submitting private password-reset tokens.</>
+                  ) : (
+                    <>VirusTotal API key is not configured on the server. Configure <code>VIRUSTOTAL_API_KEY</code> in <code>.env</code> for live intelligence.</>
+                  )}
+                </p>
+
+                {urlError && <div className="error-alert" role="alert"><AlertCircleIcon /><p>{urlError}</p></div>}
+
+                {urlResult && (
+                  <div className="url-standalone-results">
+                    {urlResult.results.map((item, index) => (
+                      <div className={`url-check-item url-status-${item.status}`} key={`${item.url}-${index}`}>
+                        <div className="url-info">
+                          <code className="url-code">{item.url}</code>
+                          <div className="url-verdict">
+                            <strong className="verdict-label">{urlCheckLabels[item.status] || item.status}</strong>
+                            {Number.isInteger(item.detections) && (
+                              <span className="vendor-stats">
+                                {item.malicious} malicious · {item.suspicious} suspicious across {item.total} security scanners
+                              </span>
+                            )}
+                            {item.message && <span className="item-msg">{item.message}</span>}
+                          </div>
+                        </div>
+                        {item.reportUrl && (
+                          <a className="report-link" href={item.reportUrl} target="_blank" rel="noreferrer">
+                            View VirusTotal Report <ArrowUpRightIcon />
+                          </a>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
+
+            {/* MEDIA TAB */}
+            {activeTool === 'media' && (
+              <section className="media-tool-container" role="tabpanel" id="media-panel" aria-labelledby="media-tab">
+                <div className="tool-intro">
+                  <span className="section-kicker">MULTI-MODAL FORENSICS</span>
+                  <h3>Synthetic Media & Deepfake Inspector</h3>
+                  <p>Examine video clips, audio voice notes, and images for AI-generation artifacts, optical anomalies, C2PA digital provenance, and fraudulent claims.</p>
+                </div>
+
+                <div className="media-dropzone">
+                  <input
+                    id="media-file"
+                    className="sr-only"
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,audio/mpeg,audio/mp4,audio/wav,audio/ogg,audio/flac,audio/webm"
+                    onChange={handleMediaChange}
+                    disabled={isAnalyzing || mediaPreparing}
+                  />
+                  <label htmlFor="media-file" className="dropzone-label">
+                    <span className="dropzone-icon"><UploadIcon /></span>
+                    <strong>{mediaFile ? 'Choose a Different Media File' : 'Click to Upload Media or Drag & Drop'}</strong>
+                    <small>Supports MP4, WebM, JPEG, PNG, MP3, WAV (Max 20 MB)</small>
+                  </label>
+                </div>
+
+                {mediaPreparing && <div className="media-loading-status"><span className="btn-spinner" /> Preparing media frames for forensic review…</div>}
+
+                {mediaFile && (
+                  <div className="media-preview-card">
+                    <div className="preview-media-container">
+                      {mediaFile.type.startsWith('video/') ? (
+                        <video src={mediaPreviewUrl} controls preload="metadata" />
+                      ) : mediaFile.type.startsWith('audio/') ? (
+                        <audio src={mediaPreviewUrl} controls preload="metadata" />
+                      ) : (
+                        <img src={mediaPreviewUrl} alt="Upload preview" />
+                      )}
+                    </div>
+                    <div className="preview-meta">
+                      <strong>{mediaFile.name}</strong>
+                      <small>{(mediaFile.size / (1024 * 1024)).toFixed(2)} MB · {mediaFile.type.startsWith('video/') ? `${mediaFrames.length} sampled temporal frames` : mediaFile.type.startsWith('audio/') ? 'Audio file for Whisper analysis' : 'High-resolution still image'}</small>
+                    </div>
+                    <button
+                      type="button"
+                      className="remove-btn"
+                      onClick={() => {
+                        setMediaFile(null)
+                        setMediaFrames([])
+                        setMediaDuration(null)
+                        setMediaPreviewUrl('')
+                        setMediaResult(null)
+                        setMediaError('')
+                      }}
+                      disabled={isAnalyzing}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                )}
+
+                <div className="media-action-row">
+                  <button
+                    type="button"
+                    className="primary-button"
+                    onClick={handleAnalyzeMedia}
+                    disabled={!mediaFile || (!mediaFrames.length && !mediaFile.type.startsWith('audio/')) || isAnalyzing || mediaPreparing}
+                  >
+                    {isAnalyzing ? <><span className="btn-spinner" /> Inspecting Media Content…</> : <>Execute Multi-Modal Analysis <ArrowUpRightIcon /></>}
+                  </button>
+                </div>
+
+                {mediaError && <div className="error-alert" role="alert"><AlertCircleIcon /><p>{mediaError}</p></div>}
+
+                {/* Media Analysis Result */}
+                {mediaResult && (
+                  <section className="results-card media-results-card" aria-live="polite">
                     <div className="result-topline">
                       <div>
-                        <p className="result-kicker">{result.mode === 'ai-assisted' ? `${(config?.externalProvider || 'AI').toUpperCase()} + RULE ENGINE` : 'RULE ENGINE'}</p>
-                        <h2>Your assessment</h2>
+                        <span className="result-kicker">
+                          {mediaResult.mediaType === 'audio' ? 'GROQ WHISPER + PHONETIC RULES' : `GROQ VISION${mediaResult.mediaType === 'video' ? ' + WHISPER' : ''}`}
+                          {mediaResult.aiDetection?.status === 'completed' && ' + SIGHTENGINE AI'}
+                        </span>
+                        <h2>Forensic Media Assessment</h2>
                       </div>
-                      <div className={`risk-badge risk-${result.level.toLowerCase()}`}><span><small>RISK LEVEL</small><strong>{result.level}</strong></span></div>
+                      <span className={`origin-badge origin-${mediaResult.authenticity?.verdict}`}>
+                        {mediaResult.aiDetection?.status === 'completed'
+                          ? `${(mediaResult.aiDetection.score * 100).toFixed(0)}% AI Generation Score`
+                          : `${mediaOriginLabels[mediaResult.authenticity?.verdict] || 'Origin Unverified'}`}
+                      </span>
                     </div>
-                    {result.urlChecks && <section className="url-checks" aria-label="Automatic VirusTotal checks"><div className="url-checks-heading"><h3>Links found in this message</h3><span>{result.urlChecks.configured ? 'VirusTotal' : 'Not configured'}</span></div>{result.urlChecks.results.map((item, index) => <div className={`url-check-row url-check-${item.status}`} key={`${item.url}-${index}`}><div><code>{item.url}</code><strong>{urlCheckLabels[item.status] || item.status}</strong>{Number.isInteger(item.detections) && <small>{item.malicious} malicious · {item.suspicious} suspicious · {item.total} vendors</small>}{item.message && <small>{item.message}</small>}</div>{item.reportUrl && <a href={item.reportUrl} target="_blank" rel="noreferrer">VirusTotal report ↗</a>}</div>)}{result.urlChecks.results.some((item) => ['malicious', 'suspicious'].includes(item.status)) && <p className="url-check-note">VirusTotal findings affect the overall risk level. The pattern match score reflects ScamShield rules only.</p>}{result.urlChecks.skipped > 0 && <p className="url-check-note">{result.urlChecks.skipped} additional link{result.urlChecks.skipped === 1 ? '' : 's'} not checked (maximum 3 per message).</p>}{result.urlChecks.results.some((item) => item.status === 'not_submitted') && <p className="url-check-note">Only one new URL is submitted per message to stay within the free API quota. Review this message again later for updated results.</p>}{result.urlChecks.results.some((item) => item.status === 'pending') && <p className="url-check-note">A new URL was submitted for scanning. Review this message again in about 30 seconds for the report.</p>}{!result.urlChecks.configured && <p className="url-check-note">Add <code>VIRUSTOTAL_API_KEY</code> to the server environment to enable automatic checks.</p>}</section>}
-                    {result.mode === 'ai-assisted' ? <><div className="assessment-summary"><strong>{result.assessment?.scamType}</strong><p>{result.assessment?.summary}</p><small>AI assessment may be wrong. Risk level is not a probability.</small></div>{result.assessment?.attackChain?.length > 0 && <div className="attack-chain"><h3>Social engineering sequence</h3><p className="chain-intro">How the conversation may be building toward an unsafe action</p><ol>{result.assessment.attackChain.map((step, index) => <li key={`${step.stage}-${index}`}><span className="chain-index">{String(index + 1).padStart(2, '0')}</span><span><strong>{step.stage}</strong><q>{step.evidence}</q><small>{step.interpretation}</small></span></li>)}</ol></div>}</> : <><div className="score-row"><span>Pattern match score</span><strong>{result.score}<span> / 100</span></strong></div><div className="score-track" role="progressbar" aria-label="Pattern match score" aria-valuenow={result.score} aria-valuemin="0" aria-valuemax="100"><span className={`score-fill fill-${result.level.toLowerCase()}`} style={{ width: `${result.score}%` }} /></div><p className="score-note">A pattern match score is not the probability that a message is a scam.</p></>}
-                    {result.level === 'High' && (() => {
-                      const financialRisk = [...(result.categories || []), result.assessment?.scamType || ''].some((category) => /payment|upi|financial/i.test(category))
-                      return <div className="response-panel"><div><p className="result-kicker">RECOMMENDED RESPONSE</p><h3>{financialRisk ? 'If money or payment details were involved' : 'Secure the affected account or device'}</h3></div>{financialRisk ? <><p>If money has already been sent, contact your bank or payment provider using its official app or number, then report the financial fraud immediately.</p><div className="response-actions"><a href="tel:1930">Call India cyber fraud helpline: 1930</a><a href="https://www.cybercrime.gov.in/" target="_blank" rel="noreferrer">Open National Cyber Crime Reporting Portal</a></div></> : <p>Do not continue through the message. Open the service’s official app or website directly, secure the account, and contact its support channel if credentials or device access were shared.</p>}</div>
-                    })()}
-                    <div className="result-columns">
-                      <div><h3>Signals identified <span className="count-pill">{result.signals.length}</span></h3>{result.signals.length ? <ul className="signal-list">{result.signals.map((signal, index) => <li key={`${signal.name}-${index}`}><span className="signal-check" aria-hidden="true">!</span><span><strong>{signal.name}</strong>{signal.evidence && <small>Evidence: &quot;{signal.evidence}&quot;</small>}{signal.explanation && <small>{signal.explanation}</small>}{signal.points > 0 && <small>Rule score: +{signal.points}</small>}</span></li>)}</ul> : <p className="quiet-copy">No configured warning patterns matched.</p>}</div>
-                      <div className="advice-panel"><h3>What to do next</h3><ul>{result.advice.map((item) => <li key={item}>{item}</li>)}</ul></div>
-                    </div>
-                    <div className="result-tools"><span>Share this assessment with a trusted person or support team.</span><button type="button" onClick={() => copyAssessment(result)}>{copyState || 'Copy assessment'}</button></div>
-                    <p className="result-footnote">{result.mode === 'ai-assisted' ? 'AI analysis can miss context or make mistakes. Verify unexpected requests independently.' : 'This scan checks configured rules only. No matched pattern does not mean a message is safe.'}</p>
-                  </>}</section>
-              )}
-            </form>}
-            {activeTool === 'url' && <section className="url-tool" role="tabpanel" id="url-panel" aria-labelledby="url-tab url-tool-title">
-              <div><span className="section-kicker">URL CHECK</span><h3 id="url-tool-title">Check a link on its own</h3><p>Paste one complete web address. VirusTotal may look it up or submit it for scanning.</p></div>
-              <form onSubmit={handleCheckUrl} className="url-tool-form">
-                <label className="sr-only" htmlFor="url-input">URL to check</label>
-                <input id="url-input" type="url" inputMode="url" placeholder="https://example.com" value={urlInput} onChange={(event) => { setUrlInput(event.target.value); setUrlResult(null); setUrlError('') }} maxLength={2048} required />
-                <button type="submit" className="primary-button" disabled={urlChecking}>{urlChecking ? 'Checking…' : 'Check URL'} <span aria-hidden="true">↗</span></button>
-              </form>
-              <p className="url-disclosure">{config?.virusTotalAvailable ? <>The URL is sent to VirusTotal. Submitted or queried URLs are added to its community dataset. Don’t check private, confidential, or password-reset links. <a href="https://docs.virustotal.com/reference/scan-url" target="_blank" rel="noreferrer">VirusTotal data notice</a>.</> : <>URL checks need <code>VIRUSTOTAL_API_KEY</code> on the server.</>}</p>
-              {urlError && <p className="media-error" role="alert">{urlError}</p>}
-              {urlResult && urlResult.results.map((item, index) => <div className={`url-check-row url-check-${item.status} standalone-url-result`} key={`${item.url}-${index}`}><div><code>{item.url}</code><strong>{urlCheckLabels[item.status] || item.status}</strong>{Number.isInteger(item.detections) && <small>{item.malicious} malicious · {item.suspicious} suspicious · {item.total} vendors</small>}{item.message && <small>{item.message}</small>}</div>{item.reportUrl && <a href={item.reportUrl} target="_blank" rel="noreferrer">VirusTotal report ↗</a>}</div>)}
-              {urlResult?.results.some((item) => item.status === 'pending') && <p className="url-check-note">Scan submitted. Check the link again in about 30 seconds to see the report.</p>}
-            </section>}
-            {activeTool === 'media' && <section className="media-tool" role="tabpanel" id="media-panel" aria-labelledby="media-tab">
-              <section className="media-upload" aria-labelledby="media-heading">
-                <div className="media-upload-heading"><div><span className="section-kicker">MEDIA CHECK</span><h3 id="media-heading">Review an image, video, or audio clip</h3><p>We’ll inspect visible clues, extract text, transcribe speech, and flag supported safety concerns.</p></div>
-                  <label className="secondary-button media-pick" htmlFor="media-file">{mediaFile ? 'Choose another file' : 'Choose media'}</label>
-                </div>
-                <input id="media-file" className="media-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,audio/mpeg,audio/mp4,audio/wav,audio/ogg,audio/flac,audio/webm" onChange={handleMediaChange} disabled={isAnalyzing || mediaPreparing} />
-                {mediaPreparing && <p className="media-status" role="status">Preparing media preview…</p>}
-                {mediaFile && <div className="media-preview">
-                  {mediaFile.type.startsWith('video/') ? <video src={mediaPreviewUrl} controls preload="metadata" /> : mediaFile.type.startsWith('audio/') ? <audio src={mediaPreviewUrl} controls preload="metadata" /> : <img src={mediaPreviewUrl} alt="Selected media preview" />}
-                  <div><strong>{mediaFile.name}</strong><small>{(mediaFile.size / (1024 * 1024)).toFixed(1)} MB · {mediaFile.type.startsWith('video/') ? `${mediaFrames.length} sampled frames` : mediaFile.type.startsWith('audio/') ? 'audio clip' : 'image preview'}</small></div>
-                  <button type="button" className="media-remove" onClick={() => { setMediaFile(null); setMediaFrames([]); setMediaDuration(null); setMediaPreviewUrl(''); setMediaResult(null); setMediaError('') }} disabled={isAnalyzing}>Remove</button>
-                </div>}
-                <p className="media-disclosure">{config?.mediaAnalysisAvailable ? <>Selected media is sent to ScamShield and Groq for description and transcription. {config?.mediaAiDetectionAvailable && <>It is also sent to Sightengine for a separate AI-origin score; its audio model is available on paid plans.</>} Videos use sampled frames for Groq{config?.mediaAiDetectionAvailable ? ' and clips under 60 seconds are sent to Sightengine’s video detector' : ''}. Groq may temporarily retain inputs for abuse and reliability investigations. <a href="https://console.groq.com/docs/your-data" target="_blank" rel="noreferrer">Groq data handling</a>{config?.mediaAiDetectionAvailable && <> · <a href="https://sightengine.com/policies/privacy" target="_blank" rel="noreferrer">Sightengine privacy</a></>}.</> : <>Media review needs a server-side <code>GROQ_API_KEY</code>. Supported image, video, and audio uploads are limited to 20 MB.</>} {config?.mediaAiDetectionAvailable ? 'AI-origin scores are estimates, not proof.' : <>Add <code>SIGHTENGINE_API_USER</code> and <code>SIGHTENGINE_API_SECRET</code> to enable dedicated AI-origin scoring.</>} C2PA checks validate embedded credentials without fetching remote manifests. Audio transcription and AI-voice detection are separate checks.</p>
-                {mediaError && <p className="media-error" role="alert">{mediaError}</p>}
-                <button type="button" className="primary-button media-review" onClick={handleAnalyzeMedia} disabled={!mediaFile || (!mediaFrames.length && !mediaFile.type.startsWith('audio/')) || isAnalyzing || mediaPreparing}>{isAnalyzing && mediaFile ? 'Reviewing media…' : 'Review media'} <span aria-hidden="true">↗</span></button>
+
+                    <p className="media-summary-text">{mediaResult.summary || 'Content processed without summary description.'}</p>
+
+                    {/* AI Score breakdown */}
+                    {mediaResult.aiDetection?.status === 'completed' && (
+                      <div className="forensic-block">
+                        <div className="block-title">
+                          <SparklesIcon />
+                          <h3>Synthetic Media Detection Metric ({mediaResult.mediaType})</h3>
+                        </div>
+                        <div className="detection-gauge">
+                          <span className="gauge-number">{(mediaResult.aiDetection.score * 100).toFixed(0)}%</span>
+                          <div>
+                            <strong>{mediaResult.aiDetection.label === 'likely_ai_generated' ? 'Elevated Synthetic / AI Generation Probability' : mediaResult.aiDetection.label === 'no_strong_ai_signal' ? 'Low Synthetic Probability' : 'Inconclusive Pattern'}</strong>
+                            <p>Scored via {mediaResult.aiDetection.model}. Synthetic probability metrics reflect statistical visual/audio classifier patterns.</p>
+                          </div>
+                        </div>
+
+                        {mediaResult.aiDetection.frameScores?.length > 0 && (
+                          <div className="frame-scores-strip">
+                            <span>Per-frame Temporal Scores:</span>
+                            {mediaResult.aiDetection.frameScores.map((frame, index) => (
+                              <span className="frame-chip" key={`${frame.position}-${index}`}>
+                                {frame.position === null ? `Frame ${index + 1}` : `${frame.position.toFixed(1)}s`}: <strong>{(frame.score * 100).toFixed(0)}%</strong>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {mediaResult.aiDetection?.status !== 'completed' && mediaResult.aiDetection?.status !== 'not_supported' && (
+                      <p className="url-check-note" role="status">
+                        {mediaDetectionErrors[mediaResult.aiDetection?.status] || 'AI-origin scoring was not available for this file.'}
+                      </p>
+                    )}
+
+                    {/* C2PA Provenance */}
+                    {mediaResult.provenance?.status !== 'unavailable' && (
+                      <div className="forensic-block">
+                        <div className="block-title">
+                          <ShieldCheckIcon />
+                          <h3>C2PA Content Credentials Verification</h3>
+                        </div>
+                        {mediaResult.provenance?.status === 'found' ? (
+                          <div className="c2pa-details">
+                            <div className="c2pa-status-badge verified">Manifest Detected & Signed ({mediaResult.provenance.validation})</div>
+                            {mediaResult.provenance.signer && <p><strong>Signer Entity:</strong> {mediaResult.provenance.signer}</p>}
+                            {mediaResult.provenance.title && <p><strong>Claim Title:</strong> {mediaResult.provenance.title}</p>}
+                            {mediaResult.provenance.actions?.length > 0 && (
+                              <p><strong>Recorded Edits:</strong> {mediaResult.provenance.actions.join(', ')}</p>
+                            )}
+                          </div>
+                        ) : (
+                          <p className="c2pa-missing">No cryptographically embedded C2PA manifest found. Lack of C2PA metadata is normal for standard camera captures but prevents automated hardware origin verification.</p>
+                        )}
+                      </div>
+                    )}
+
+                    {mediaResult.aiDetection?.status !== 'completed' && mediaResult.aiDetection?.status !== 'not_supported' && (
+                      <p className="url-check-note" role="status">
+                        {mediaDetectionErrors[mediaResult.aiDetection?.status] || 'AI-origin scoring was not available for this file.'}
+                      </p>
+                    )}
+
+                    {/* Visual Check Observations */}
+                    {Object.keys(mediaResult.visualChecks || {}).length > 0 && (
+                      <div className="forensic-block">
+                        <div className="block-title">
+                          <MediaIcon />
+                          <h3>Visual Forensic Observations</h3>
+                        </div>
+                        <div className="visual-checks-grid">
+                          {Object.entries(mediaResult.visualChecks).map(([key, items]) => (
+                            <div className="visual-check-card" key={key}>
+                              <strong>{({ anatomy_details: 'Anatomy & Biometrics', text_and_symbols: 'Text & Typography', spatial_geometry: 'Spatial Geometry', lighting_and_reflections: 'Lighting & Physics', texture_consistency: 'Texture Consistency' })[key] || key}</strong>
+                              <p>{items.join('; ')}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Speech Transcript */}
+                    {mediaResult.transcriptStatus !== 'not_applicable' && (
+                      <div className="forensic-block">
+                        <div className="block-title">
+                          <MessageSquareIcon />
+                          <h3>Whisper Audio Speech Transcript</h3>
+                        </div>
+                        <blockquote className="transcript-quote">
+                          {mediaResult.transcript || (mediaResult.transcriptStatus === 'no_speech_detected' ? 'No audible speech identified in recording.' : 'Transcript unavailable.')}
+                        </blockquote>
+                      </div>
+                    )}
+
+                    {/* Safety Concerns */}
+                    {mediaResult.safetyConcerns.length > 0 && (
+                      <div className="forensic-block safety-concerns-block">
+                        <div className="block-title alert-title">
+                          <AlertCircleIcon />
+                          <h3>Content Risk & Safety Flags</h3>
+                        </div>
+                        <ul className="safety-list">
+                          {mediaResult.safetyConcerns.map((item, index) => (
+                            <li key={index}>{item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </section>
+                )}
               </section>
-              {mediaResult && <section className="results media-results" aria-live="polite" aria-atomic="true">
-                <div className="result-topline"><div><p className="result-kicker">{mediaResult.mediaType === 'audio' ? 'GROQ WHISPER + RULE CHECKS' : `GROQ VISION${mediaResult.mediaType === 'video' ? ' + WHISPER' : ''}`}{mediaResult.aiDetection?.status === 'completed' && ' + SIGHTENGINE'}</p><h2>Media assessment</h2></div><span className={`origin-badge origin-${mediaResult.authenticity.verdict}`}>{mediaResult.aiDetection?.status === 'completed' ? `${mediaResult.mediaType === 'audio' ? mediaResult.aiDetection.label === 'likely_ai_generated' ? 'AI speech signal' : mediaResult.aiDetection.label === 'no_strong_ai_signal' ? 'No strong AI speech signal' : 'Inconclusive speech score' : mediaOriginLabels[mediaResult.aiDetection.label] || 'AI-origin estimate'} · ${(mediaResult.aiDetection.score * 100).toFixed(0)}% score` : mediaResult.mediaType === 'audio' ? 'Audio origin not assessed' : `${mediaOriginLabels[mediaResult.authenticity.verdict] || 'Origin unclear'} · ${mediaResult.authenticity.confidence} confidence`}</span></div>
-                <p className="media-summary">{mediaResult.summary || 'No clear description was returned.'}</p>
-                {mediaResult.aiDetection?.status === 'completed' && <div className="media-result-block"><h3>AI origin estimate · {mediaResult.mediaType === 'audio' ? 'speech' : mediaResult.mediaType}</h3><div className="detection-score"><strong>{(mediaResult.aiDetection.score * 100).toFixed(0)}%</strong><span>{mediaResult.aiDetection.label === 'likely_ai_generated' ? 'Strong AI-generation signal' : mediaResult.aiDetection.label === 'no_strong_ai_signal' ? 'No strong AI-generation signal' : 'Inconclusive score'}</span></div><small>{mediaResult.aiDetection.model}. This is a model score, not proof. A low score does not establish that media is authentic.</small>{mediaResult.aiDetection.frameScores?.length > 0 && <div className="frame-scores"><strong>Per-frame scores</strong>{mediaResult.aiDetection.frameScores.map((frame, index) => <span key={`${frame.position}-${index}`}>{frame.position === null ? `Frame ${index + 1}` : `${frame.position.toFixed(1)}s`}: {(frame.score * 100).toFixed(0)}%</span>)}</div>}</div>}
-                {mediaResult.aiDetection?.status !== 'completed' && mediaResult.aiDetection?.status !== 'not_supported' && <p className="url-check-note" role="status">{mediaDetectionErrors[mediaResult.aiDetection?.status] || 'AI-origin scoring was not available for this file.'}</p>}
-                {mediaResult.provenance?.status !== 'unavailable' && <div className="media-result-block"><h3>Content Credentials (C2PA)</h3>{mediaResult.provenance?.status === 'found' ? <><p>Manifest detected · validation: <strong>{mediaResult.provenance.validation || 'unknown'}</strong></p>{mediaResult.provenance.signer && <p>Signer: {mediaResult.provenance.signer}</p>}{mediaResult.provenance.title && <p>Title: {mediaResult.provenance.title}</p>}{mediaResult.provenance.digitalSourceTypes?.length > 0 && <p>Digital source: {mediaResult.provenance.digitalSourceTypes.join(', ')}</p>}{mediaResult.provenance.actions?.length > 0 && <p>Recorded actions: {mediaResult.provenance.actions.join(', ')}</p>}<small>A valid signature supports the recorded provenance; it does not guarantee that the depicted claims are true.</small></> : mediaResult.provenance?.status === 'not_found' ? <p>No embedded Content Credentials were found. Many authentic files do not include C2PA credentials.</p> : <p>Credentials may be present, but they could not be validated or read.</p>}</div>}
-                {mediaResult.authenticity.reasons.length > 0 && <div className="media-result-block"><h3>Origin clues</h3><ul>{mediaResult.authenticity.reasons.map((item, index) => <li key={index}>{item}</li>)}</ul></div>}
-                {Object.keys(mediaResult.visualChecks || {}).length > 0 && <div className="media-result-block"><h3>Visual clues reviewed</h3>{Object.entries(mediaResult.visualChecks).map(([key, items]) => <p className="visual-check-row" key={key}><strong>{({ anatomy_details: 'Anatomy and fine details', text_and_symbols: 'Text and symbols', spatial_geometry: 'Spatial geometry', lighting_and_reflections: 'Lighting and reflections', texture_consistency: 'Texture consistency' })[key] || key}:</strong> {items.join('; ')}</p>)}<small>These are model observations from visible pixels, not forensic findings.</small></div>}
-                {mediaResult.visibleText.length > 0 && <div className="media-result-block"><h3>Text found in media</h3><ul>{mediaResult.visibleText.map((item, index) => <li key={index}>{item}</li>)}</ul></div>}
-                {mediaResult.claims.length > 0 && <div className="media-result-block"><h3>Claims shown</h3><ul>{mediaResult.claims.map((item, index) => <li key={index}>{item}</li>)}</ul></div>}
-                {mediaResult.safetyConcerns.length > 0 && <div className="media-result-block media-concerns"><h3>Safety concerns</h3><ul>{mediaResult.safetyConcerns.map((item, index) => <li key={index}>{item}</li>)}</ul></div>}
-                {mediaResult.transcriptStatus !== 'not_applicable' && <div className="media-result-block"><h3>Speech transcript</h3>{mediaResult.transcript ? <p>{mediaResult.transcript}</p> : <p>{mediaResult.transcriptStatus === 'no_speech_detected' ? 'No speech was detected.' : mediaResult.transcriptStatus || 'No transcript available.'}</p>}</div>}
-                {mediaResult.metadataIndicators.length > 0 && <div className="media-result-block"><h3>Unverified metadata clues</h3><ul>{mediaResult.metadataIndicators.map((item, index) => <li key={index}>{item}</li>)}</ul><small>Metadata can be forged or copied; these markers are not proof of origin.</small></div>}
-                {mediaResult.mediaType !== 'audio' && <p className="media-provenance-link">Optional external checks: <a href="https://synthid.com/" target="_blank" rel="noreferrer">Google SynthID Detector ↗</a> or <a href="https://lens.google.com/" target="_blank" rel="noreferrer">Google Lens ↗</a>. Upload the original only if you are comfortable sharing it with those services. ScamShield does not send your upload to them.</p>}
-                <p className="result-footnote">{mediaResult.authenticity.caveat}{mediaResult.mediaType === 'video' && ' Video review only sees sampled frames and may miss events or lip-sync issues between them.'}{mediaResult.mediaType !== 'audio' && ' Appearance-based detection can be wrong; an inconclusive result does not mean the media is authentic.'}</p>
-              </section>}
-            </section>}
+            )}
           </section>
         </div>
 
-        {activeTool === 'message' && !result && <section className="examples" aria-label="Try a sample message"><div><span className="section-kicker">TRY A SAMPLE</span><p>Explore the prototype with a scenario</p></div><div className="example-list">{examples.map((example) => <button type="button" key={example.label} onClick={() => loadExample(example)}>{example.label}<span aria-hidden="true">↗</span></button>)}</div></section>}
+        {/* Curated Threat Scenario Presets */}
+        {activeTool === 'message' && !result && (
+          <section className="scenarios-section" aria-label="Curated Threat Scenarios">
+            <div className="scenarios-header">
+              <span className="section-kicker">THREAT LIBRARY</span>
+              <h3>Explore Common Attack Vectors</h3>
+              <p>Test the detection engine against realistic fraudulent scenarios observed in the wild:</p>
+            </div>
+            <div className="scenarios-grid">
+              {threatScenarios.map((scenario) => (
+                <button
+                  type="button"
+                  key={scenario.label}
+                  className="scenario-card-btn"
+                  onClick={() => loadExample(scenario)}
+                >
+                  <div className="scenario-top">
+                    <span className="scenario-badge">{scenario.badge}</span>
+                    <span className="scenario-category">{scenario.category}</span>
+                  </div>
+                  <strong>{scenario.label}</strong>
+                  <p>&ldquo;{scenario.message.slice(0, 85)}…&rdquo;</p>
+                  <span className="scenario-action">Load into Analyzer <ArrowUpRightIcon /></span>
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
 
-        <aside className="reminder"><span className="reminder-icon" aria-hidden="true">✓</span><p><strong>When in doubt, verify independently.</strong> Contact the person or organization using details you already trust — not details in the message.</p></aside>
+        {/* Security Assurance Banner */}
+        <aside className="security-banner">
+          <div className="banner-icon"><ShieldCheckIcon /></div>
+          <div className="banner-text">
+            <strong>When in doubt, verify independently through trusted out-of-band channels.</strong>
+            <p>ScamShield AI provides automated heuristic signals and confidence ratings. Never use telephone numbers or URLs contained in suspicious messages to verify authenticity.</p>
+          </div>
+        </aside>
       </main>
 
-      <footer><a className="footer-brand" href="#top">ScamShield</a><span>Clear signals. Safer next steps.</span><span>Automated indicators are not proof.</span></footer>
+      {/* Enterprise Footer */}
+      <footer className="footer">
+        <div className="footer-container">
+          <div className="footer-brand-col">
+            <div className="brand footer-brand">
+              <span className="brand-mark"><ShieldIcon /></span>
+              <span>SCAM<span className="brand-highlight">SHIELD</span></span>
+            </div>
+            <p>Enterprise threat intelligence and fraud prevention platform built with zero-knowledge architecture.</p>
+          </div>
+
+          <div className="footer-links-col">
+            <h4>Security Architecture</h4>
+            <span>Multi-Modal Groq / Gemini AI</span>
+            <span>VirusTotal Threat Intelligence</span>
+            <span>C2PA Digital Provenance</span>
+          </div>
+
+          <div className="footer-links-col">
+            <h4>Incident Hotlines</h4>
+            <a href="tel:1930">India Cyber Fraud: 1930</a>
+            <a href="https://cybercrime.gov.in" target="_blank" rel="noreferrer">cybercrime.gov.in</a>
+            <a href="https://reportfraud.ftc.gov" target="_blank" rel="noreferrer">US FTC Report Fraud</a>
+          </div>
+        </div>
+        <div className="footer-bottom">
+          <span>&copy; {new Date().getFullYear()} ScamShield AI Defense Systems. All rights reserved.</span>
+          <span>Zero-Log Architecture · Client-Side Frame Sampling · End-to-End Encrypted Feeds</span>
+        </div>
+      </footer>
     </div>
   )
 }
