@@ -47,7 +47,7 @@ paths:
     post:
       operationId: analyzeMedia
       summary: Review image or video content and possible AI-generation signs
-      description: Accepts JPEG, PNG, WebP, GIF, MP4, or WebM up to 20 MB. The browser sends up to three JPEG preview frames for visual review; the original video is also sent to Groq Whisper for audio transcription. Results are estimates, not proof of origin. Media is processed in memory and sent to Groq.
+      description: Accepts JPEG, PNG, WebP, GIF, MP4, WebM, MP3, M4A, WAV, OGG, or FLAC up to 20 MB. The browser sends up to three JPEG preview frames for visual review; video and audio files are sent to Groq Whisper for transcription. Audio-origin authenticity is not assessed. Visual results are estimates, not proof of origin. Media is processed in memory and sent to Groq.
       requestBody:
         required: true
         content:
@@ -57,7 +57,7 @@ paths:
               required: [file, frames]
               properties:
                 file: { type: string, format: binary }
-                frames: { type: string, description: JSON array of up to three data URL previews }
+                frames: { type: string, description: JSON array of up to three data URL previews; empty for audio }
       responses:
         '200':
           description: Media content and tentative origin assessment
@@ -71,11 +71,12 @@ paths:
                   mediaAnalysis:
                     type: object
                     properties:
-                      mediaType: { type: string, enum: [image, video] }
+                      mediaType: { type: string, enum: [image, video, audio] }
                       summary: { type: string }
                       visibleText: { type: array, items: { type: string } }
                       claims: { type: array, items: { type: string } }
                       safetyConcerns: { type: array, items: { type: string } }
+                      visualChecks: { type: object, additionalProperties: { type: array, items: { type: string } } }
                       authenticity:
                         type: object
                         properties:

@@ -41,6 +41,7 @@ function canvasFrame(source) {
 }
 
 async function prepareMediaFrames(file) {
+  if (file.type.startsWith('audio/')) return []
   const objectUrl = URL.createObjectURL(file)
   try {
     if (file.type.startsWith('image/')) {
@@ -107,7 +108,7 @@ function App() {
     const file = event.target.files?.[0]
     event.target.value = ''
     if (!file) return
-    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'video/mp4', 'video/webm']
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'video/mp4', 'video/webm', 'audio/mpeg', 'audio/mp4', 'audio/wav', 'audio/ogg', 'audio/flac', 'audio/webm']
     if (!allowedTypes.includes(file.type)) {
       setMediaError('Use a JPEG, PNG, WebP, GIF, MP4, or WebM file.')
       setMediaFile(null)
@@ -144,7 +145,7 @@ function App() {
   }
 
   async function handleAnalyzeMedia() {
-    if (!mediaFile || !mediaFrames.length) return
+    if (!mediaFile || (!mediaFrames.length && !mediaFile.type.startsWith('audio/'))) return
     setIsAnalyzing(true)
     setMediaError('')
     setMediaResult(null)
@@ -286,7 +287,7 @@ function App() {
             <div className="tool-tabs" role="tablist" aria-label="Choose a review tool">
               <button type="button" id="message-tab" role="tab" aria-controls="message-panel" aria-selected={activeTool === 'message'} className={activeTool === 'message' ? 'active' : ''} onClick={() => setActiveTool('message')}><strong>Message</strong><small>Scam and conversation signals</small></button>
               <button type="button" id="url-tab" role="tab" aria-controls="url-panel" aria-selected={activeTool === 'url'} className={activeTool === 'url' ? 'active' : ''} onClick={() => setActiveTool('url')}><strong>URL</strong><small>VirusTotal reputation check</small></button>
-              <button type="button" id="media-tab" role="tab" aria-controls="media-panel" aria-selected={activeTool === 'media'} className={activeTool === 'media' ? 'active' : ''} onClick={() => setActiveTool('media')}><strong>Image &amp; video</strong><small>Content and AI-origin clues</small></button>
+              <button type="button" id="media-tab" role="tab" aria-controls="media-panel" aria-selected={activeTool === 'media'} className={activeTool === 'media' ? 'active' : ''} onClick={() => setActiveTool('media')}><strong>Media</strong><small>Image, video, and audio review</small></button>
             </div>
             {activeTool === 'message' && <form id="message-panel" role="tabpanel" aria-labelledby="message-tab" onSubmit={handleAnalyze}>
               <div className="field-heading">
@@ -351,30 +352,32 @@ function App() {
             </section>}
             {activeTool === 'media' && <section className="media-tool" role="tabpanel" id="media-panel" aria-labelledby="media-tab">
               <section className="media-upload" aria-labelledby="media-heading">
-                <div className="media-upload-heading"><div><span className="section-kicker">IMAGE &amp; VIDEO CHECK</span><h3 id="media-heading">Review a photo, poster, or video</h3><p>We’ll describe the content, read visible text, flag supported safety concerns, and estimate whether it looks AI-generated.</p></div>
+                <div className="media-upload-heading"><div><span className="section-kicker">MEDIA CHECK</span><h3 id="media-heading">Review an image, video, or audio clip</h3><p>We’ll inspect visible clues, extract text, transcribe speech, and flag supported safety concerns.</p></div>
                   <label className="secondary-button media-pick" htmlFor="media-file">{mediaFile ? 'Choose another file' : 'Choose media'}</label>
                 </div>
-                <input id="media-file" className="media-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm" onChange={handleMediaChange} disabled={isAnalyzing || mediaPreparing} />
+                <input id="media-file" className="media-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,audio/mpeg,audio/mp4,audio/wav,audio/ogg,audio/flac,audio/webm" onChange={handleMediaChange} disabled={isAnalyzing || mediaPreparing} />
                 {mediaPreparing && <p className="media-status" role="status">Preparing media preview…</p>}
                 {mediaFile && <div className="media-preview">
-                  {mediaFile.type.startsWith('video/') ? <video src={mediaPreviewUrl} controls preload="metadata" /> : <img src={mediaPreviewUrl} alt="Selected media preview" />}
-                  <div><strong>{mediaFile.name}</strong><small>{(mediaFile.size / (1024 * 1024)).toFixed(1)} MB · {mediaFrames.length} {mediaFile.type.startsWith('video/') ? 'sampled frames' : 'preview'}</small></div>
+                  {mediaFile.type.startsWith('video/') ? <video src={mediaPreviewUrl} controls preload="metadata" /> : mediaFile.type.startsWith('audio/') ? <audio src={mediaPreviewUrl} controls preload="metadata" /> : <img src={mediaPreviewUrl} alt="Selected media preview" />}
+                  <div><strong>{mediaFile.name}</strong><small>{(mediaFile.size / (1024 * 1024)).toFixed(1)} MB · {mediaFile.type.startsWith('video/') ? `${mediaFrames.length} sampled frames` : mediaFile.type.startsWith('audio/') ? 'audio clip' : 'image preview'}</small></div>
                   <button type="button" className="media-remove" onClick={() => { setMediaFile(null); setMediaFrames([]); setMediaPreviewUrl(''); setMediaResult(null); setMediaError('') }} disabled={isAnalyzing}>Remove</button>
                 </div>}
-                <p className="media-disclosure">{config?.mediaAnalysisAvailable ? <>Selected media is sent to ScamShield and Groq. Videos are reviewed using up to 3 sampled frames; the video is also sent to Groq Whisper for speech transcription. Groq may temporarily retain inputs for abuse and reliability investigations. <a href="https://console.groq.com/docs/your-data" target="_blank" rel="noreferrer">Data handling</a>.</> : <>Media review needs a server-side <code>GROQ_API_KEY</code>. Images and videos up to 20 MB are supported; video review samples up to 3 frames.</>} AI-origin detection is an estimate, not forensic proof.</p>
+                <p className="media-disclosure">{config?.mediaAnalysisAvailable ? <>Selected media is sent to ScamShield and Groq. Videos use up to 3 sampled frames; video and audio speech is transcribed with Groq Whisper. Groq may temporarily retain inputs for abuse and reliability investigations. <a href="https://console.groq.com/docs/your-data" target="_blank" rel="noreferrer">Data handling</a>.</> : <>Media review needs a server-side <code>GROQ_API_KEY</code>. Supported image, video, and audio uploads are limited to 20 MB.</>} Appearance-based origin detection is an estimate, not forensic proof. Audio transcription does not identify AI-generated voices.</p>
                 {mediaError && <p className="media-error" role="alert">{mediaError}</p>}
-                <button type="button" className="primary-button media-review" onClick={handleAnalyzeMedia} disabled={!mediaFile || !mediaFrames.length || isAnalyzing || mediaPreparing}>{isAnalyzing && mediaFile ? 'Reviewing media…' : 'Review media'} <span aria-hidden="true">↗</span></button>
+                <button type="button" className="primary-button media-review" onClick={handleAnalyzeMedia} disabled={!mediaFile || (!mediaFrames.length && !mediaFile.type.startsWith('audio/')) || isAnalyzing || mediaPreparing}>{isAnalyzing && mediaFile ? 'Reviewing media…' : 'Review media'} <span aria-hidden="true">↗</span></button>
               </section>
               {mediaResult && <section className="results media-results" aria-live="polite" aria-atomic="true">
-                <div className="result-topline"><div><p className="result-kicker">GROQ VISION{mediaResult.mediaType === 'video' ? ' + WHISPER' : ''}</p><h2>Media assessment</h2></div><span className={`origin-badge origin-${mediaResult.authenticity.verdict}`}>{mediaOriginLabels[mediaResult.authenticity.verdict] || 'Origin unclear'} · {mediaResult.authenticity.confidence} confidence</span></div>
+                <div className="result-topline"><div><p className="result-kicker">{mediaResult.mediaType === 'audio' ? 'GROQ WHISPER + RULE CHECKS' : `GROQ VISION${mediaResult.mediaType === 'video' ? ' + WHISPER' : ''}`}</p><h2>Media assessment</h2></div><span className={`origin-badge origin-${mediaResult.authenticity.verdict}`}>{mediaResult.mediaType === 'audio' ? 'Audio origin not assessed' : `${mediaOriginLabels[mediaResult.authenticity.verdict] || 'Origin unclear'} · ${mediaResult.authenticity.confidence} confidence`}</span></div>
                 <p className="media-summary">{mediaResult.summary || 'No clear description was returned.'}</p>
                 {mediaResult.authenticity.reasons.length > 0 && <div className="media-result-block"><h3>Origin clues</h3><ul>{mediaResult.authenticity.reasons.map((item, index) => <li key={index}>{item}</li>)}</ul></div>}
+                {Object.keys(mediaResult.visualChecks || {}).length > 0 && <div className="media-result-block"><h3>Visual clues reviewed</h3>{Object.entries(mediaResult.visualChecks).map(([key, items]) => <p className="visual-check-row" key={key}><strong>{({ anatomy_details: 'Anatomy and fine details', text_and_symbols: 'Text and symbols', spatial_geometry: 'Spatial geometry', lighting_and_reflections: 'Lighting and reflections', texture_consistency: 'Texture consistency' })[key] || key}:</strong> {items.join('; ')}</p>)}<small>These are model observations from visible pixels, not forensic findings.</small></div>}
                 {mediaResult.visibleText.length > 0 && <div className="media-result-block"><h3>Text found in media</h3><ul>{mediaResult.visibleText.map((item, index) => <li key={index}>{item}</li>)}</ul></div>}
                 {mediaResult.claims.length > 0 && <div className="media-result-block"><h3>Claims shown</h3><ul>{mediaResult.claims.map((item, index) => <li key={index}>{item}</li>)}</ul></div>}
                 {mediaResult.safetyConcerns.length > 0 && <div className="media-result-block media-concerns"><h3>Safety concerns</h3><ul>{mediaResult.safetyConcerns.map((item, index) => <li key={index}>{item}</li>)}</ul></div>}
-                {mediaResult.mediaType === 'video' && <div className="media-result-block"><h3>Speech transcript</h3>{mediaResult.transcript ? <p>{mediaResult.transcript}</p> : <p>{mediaResult.transcriptStatus === 'no_speech_detected' ? 'No speech was detected.' : mediaResult.transcriptStatus || 'No transcript available.'}</p>}</div>}
+                {mediaResult.transcriptStatus !== 'not_applicable' && <div className="media-result-block"><h3>Speech transcript</h3>{mediaResult.transcript ? <p>{mediaResult.transcript}</p> : <p>{mediaResult.transcriptStatus === 'no_speech_detected' ? 'No speech was detected.' : mediaResult.transcriptStatus || 'No transcript available.'}</p>}</div>}
                 {mediaResult.metadataIndicators.length > 0 && <div className="media-result-block"><h3>Unverified metadata clues</h3><ul>{mediaResult.metadataIndicators.map((item, index) => <li key={index}>{item}</li>)}</ul><small>Metadata can be forged or copied; these markers are not proof of origin.</small></div>}
-                <p className="result-footnote">{mediaResult.authenticity.caveat} “No clear AI signs” does not mean the media is authentic. Video review only sees sampled frames and may miss content between them.</p>
+                {mediaResult.mediaType !== 'audio' && <p className="media-provenance-link">For a separate check of supported invisible watermarks, <a href="https://synthid.com/" target="_blank" rel="noreferrer">open Google’s SynthID Detector ↗</a> and upload the original file there. ScamShield does not send your upload to that service.</p>}
+                <p className="result-footnote">{mediaResult.authenticity.caveat}{mediaResult.mediaType === 'video' && ' Video review only sees sampled frames and may miss events or lip-sync issues between them.'}{mediaResult.mediaType !== 'audio' && ' Appearance-based detection can be wrong; an inconclusive result does not mean the media is authentic.'}</p>
               </section>}
             </section>}
           </section>
