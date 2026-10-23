@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { analyzeMessage } from '../shared/detector.js'
 import { classifyMessageWithGemini } from './gemini-classifier.js'
 import { classifyMessageWithGroq } from './groq-classifier.js'
+import { checkMessageUrls } from './virustotal.js'
 
 const projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const staticRoot = resolve(projectRoot, 'frontend', 'dist')
@@ -22,6 +23,7 @@ const aiProvider = providerKeyAvailable ? requestedAiProvider : 'rules'
 if (!providerKeyAvailable) console.warn(`SCAMSHIELD_AI_PROVIDER=${requestedAiProvider} has no API key configured; using rules mode.`)
 const geminiModel = process.env.GEMINI_MODEL || 'gemini-3.8-flash'
 const groqModel = process.env.GROQ_MODEL || 'openai/gpt-oss-20b'
+const virusTotalAvailable = Boolean(process.env.VIRUSTOTAL_API_KEY)
 const aiEnabled = aiProvider !== 'rules'
 const externalProvider = aiProvider === 'gemini' ? 'Gemini' : aiProvider === 'groq' ? 'Groq' : null
 const port = readInteger(process.env.PORT, 8787, 1, 65535)
@@ -187,6 +189,7 @@ const server = createServer(async (request, response) => {
         analysisModes: aiEnabled ? ['rules', 'ai-assisted'] : ['rules'],
         aiAssistedAvailable: aiEnabled,
         externalProvider,
+        virusTotalAvailable,
         requestId
       })
       return
@@ -229,12 +232,13 @@ const server = createServer(async (request, response) => {
           writeJson(response, 400, { error: { code: 'INVALID_INPUT', message: 'useAiAnalysis must be a boolean.', requestId } })
           return
         }
+        if (body.useAiAnalysis === true && !aiEnabled) {
+          writeJson(response, 503, { error: { code: 'AI_NOT_CONFIGURED', message: 'AI-assisted analysis is not configured on this service.', requestId } })
+          return
+        }
         let analysis = { ...analyzeMessage(message), mode: 'rules' }
+        const urlChecksPromise = checkMessageUrls(message, process.env.VIRUSTOTAL_API_KEY)
         if (body.useAiAnalysis === true) {
-          if (!aiEnabled) {
-            writeJson(response, 503, { error: { code: 'AI_NOT_CONFIGURED', message: 'AI-assisted analysis is not configured on this service.', requestId } })
-            return
-          }
           const assessment = aiProvider === 'gemini'
             ? await classifyMessageWithGemini(message, { apiKey: process.env.GEMINI_API_KEY, model: geminiModel })
             : await classifyMessageWithGroq(message, { apiKey: process.env.GROQ_API_KEY, model: groqModel })
@@ -261,6 +265,40 @@ const server = createServer(async (request, response) => {
               return true
             }),
             advice: [...new Set([...assessment.advice, ...analysis.advice])]
+          }
+        }
+        const urlChecks = await urlChecksPromise
+        if (urlChecks) {
+          const urlSignals = urlChecks.results.flatMap((result) => {
+            if (result.status === 'malicious') return [{
+              name: 'VirusTotal flagged this URL as malicious',
+              category: 'Malicious URL',
+              points: 0,
+              evidence: result.url,
+              explanation: `${result.malicious} of ${result.total} security vendors flagged this link as malicious.`,
+              advice: 'Do not open this link. If you already entered information, secure the affected account and contact the service through its official channel.'
+            }]
+            if (result.status === 'suspicious') return [{
+              name: 'VirusTotal flagged this URL as suspicious',
+              category: 'Suspicious URL',
+              points: 0,
+              evidence: result.url,
+              explanation: `${result.suspicious} security vendors flagged this link as suspicious${result.total ? ` out of ${result.total}` : ''}.`,
+              advice: 'Avoid opening this link. Verify the destination through the service’s official app or website.'
+            }]
+            return []
+          })
+          const vtLevel = urlSignals.some((signal) => signal.category === 'Malicious URL')
+            ? 'High'
+            : urlSignals.length ? 'Medium' : analysis.level
+          const levelRank = { Low: 0, Medium: 1, High: 2 }
+          analysis = {
+            ...analysis,
+            level: levelRank[vtLevel] > levelRank[analysis.level] ? vtLevel : analysis.level,
+            categories: [...new Set([...analysis.categories, ...urlSignals.map((signal) => signal.category)])],
+            signals: [...analysis.signals, ...urlSignals],
+            advice: [...new Set([...analysis.advice, ...urlSignals.map((signal) => signal.advice)])],
+            urlChecks
           }
         }
         writeJson(response, 200, { requestId, analysis })

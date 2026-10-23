@@ -11,7 +11,7 @@ export async function analyzeMessageRequest(message, useAiAnalysis = false) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({ message, useAiAnalysis }),
-      signal: AbortSignal.timeout(35000)
+      signal: AbortSignal.timeout(65000)
     })
   } catch {
     throw new Error('ScamShield could not reach its analysis service. Check your connection and try again.')

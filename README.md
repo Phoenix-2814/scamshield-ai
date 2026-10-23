@@ -20,6 +20,12 @@ Open the Vite URL shown in the terminal. The dev command starts both the API on 
 
 Requests must be JSON. Messages are limited to 5,000 characters. The API enforces a request body limit, applies a small per-process rate limit, sends browser security headers, and does not log message contents. The rate limiter is an in-memory prototype guard; it resets at restart and is not suitable across multiple replicas.
 
+When `VIRUSTOTAL_API_KEY` is configured, up to three links in submitted messages are automatically looked up through VirusTotal. If a link is not known yet, ScamShield can submit one new link per message for scanning; its report may be pending on the first check. VirusTotal warns that URLs queried or submitted through its API are added to its community dataset, so do not paste private, confidential, or password-reset links. The app displays this notice beside the analyzer and keeps the API key on the server. VirusTotal's free Public API is limited to 4 requests per minute and 500 per day, and must not be used in commercial products or services; use a licensed Private API key for commercial use.
+
+```text
+VIRUSTOTAL_API_KEY=<your server-side VirusTotal API key>
+```
+
 ## Optional AI analysis
 
 Rules-based analysis is the default. To enable Groq locally, copy `.env.example` to `.env`, uncomment the Groq settings, and set your key in `GROQ_API_KEY`. Alternatively, uncomment the Gemini settings and set `GEMINI_API_KEY`. The `npm run dev` and `npm start` commands load the root `.env` file. Keep provider keys server-side; never put them in frontend code or a `VITE_` variable.
@@ -59,7 +65,7 @@ The included `render.yaml` configures a free Docker web service in Singapore, us
 
 1. Push this project to a GitHub or GitLab repository you control.
 2. In Render, choose **New → Blueprint**, connect that repository, and apply the `render.yaml` configuration.
-3. Add your Groq key as `GROQ_API_KEY` in the service's Environment settings, then save and redeploy.
+3. Add your Groq key as `GROQ_API_KEY` and, if you want automatic URL checks, your VirusTotal key as `VIRUSTOTAL_API_KEY` in the service's Environment settings; then save and redeploy.
 4. Open the generated `onrender.com` URL and try a built-in example.
 5. Copy the working URL into the hackathon submission.
 
@@ -67,7 +73,7 @@ Render's free web services sleep after 15 minutes without traffic and can take a
 
 ## Current detection scope
 
-The shared rule engine is in `shared/detector.js`. It checks for credential requests, pressure tactics, payment fees, fake KYC, UPI collect/PIN-to-receive language, job-fee lures, remote-access requests, prize lures, and a small set of suspicious URL traits. Groq or Gemini can analyze pasted conversation transcripts for a supported social-engineering sequence and quotes matching evidence. High-risk results include account or India-specific financial-fraud response guidance, and users can copy an assessment to share with a trusted contact. Neither mode resolves redirects, queries live threat feeds, or validates senders. Scores and model risk labels are indicators, not proof or probabilities. A low result does not prove a message is safe.
+The shared rule engine is in `shared/detector.js`. It checks for credential requests, pressure tactics, payment fees, fake KYC, UPI collect/PIN-to-receive language, job-fee lures, remote-access requests, prize lures, and a small set of suspicious URL traits. When configured, VirusTotal adds live reputation checks for up to three URLs found in a message. Groq or Gemini can analyze pasted conversation transcripts for a supported social-engineering sequence and quotes matching evidence. High-risk results include account or India-specific financial-fraud response guidance, and users can copy an assessment to share with a trusted contact. Neither mode resolves redirects or validates senders. Scores and model risk labels are indicators, not proof or probabilities. A low result does not prove a message is safe.
 
 ## Production work still required
 

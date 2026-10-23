@@ -34,6 +34,20 @@
 .assessment-summary strong { color: #705520; font-size: 11px; }
 .assessment-summary p { margin: 6px 0; color: #56616b; font-size: 11px; line-height: 1.65; }
 .assessment-summary small { color: #818b92; font-size: 9px; }
+.url-checks { display: grid; gap: 9px; margin-top: 14px; padding: 12px 14px; border: 1px solid #dce5e8; border-radius: 6px; background: #f8fafb; }
+.url-checks-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.url-checks-heading h3 { margin: 0; color: #304553; font-size: 11px; }
+.url-checks-heading > span { color: #71808b; font-size: 9px; }
+.url-check-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 10px; border: 1px solid #e2e8eb; border-radius: 5px; background: #fff; }
+.url-check-row > div { display: grid; gap: 4px; min-width: 0; }
+.url-check-row code { color: #425461; font-size: 9px; overflow-wrap: anywhere; }
+.url-check-row strong { color: #475966; font-size: 10px; }
+.url-check-row small, .url-check-note { color: #788690; font-size: 9px; line-height: 1.5; }
+.url-check-row a { flex: 0 0 auto; color: #087e83; font-size: 9px; font-weight: 700; }
+.url-check-malicious strong { color: #a13f38; }
+.url-check-suspicious strong { color: #8b671f; }
+.url-check-note { margin: 0; }
+.url-check-note code { color: #425461; }
 .response-panel { display: grid; gap: 8px; margin-top: 15px; padding: 13px 15px; border: 1px solid #ead7b7; border-radius: 6px; background: #fcf8f0; }
 .response-panel .result-kicker { margin-bottom: 4px; color: #8a6a31; }
 .response-panel h3 { margin: 0; color: #51442f; font-size: 11px; }

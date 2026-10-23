@@ -15,3 +15,5 @@ services:
         value: openai/gpt-oss-20b
       - key: GROQ_API_KEY
         sync: false
+      - key: VIRUSTOTAL_API_KEY
+        sync: false

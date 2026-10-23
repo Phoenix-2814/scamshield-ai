@@ -13,6 +13,27 @@ const rules = [
 
 const shortenerHosts = new Set(['bit.ly', 'tinyurl.com', 't.co', 'goo.gl', 'is.gd', 'cutt.ly', 'rb.gy', 'shorturl.at'])
 
+export function extractUrls(text) {
+  const matches = text.match(/(?:https?:\/\/|www\.)[^\s<>()]+/gi) ?? []
+  const urls = []
+  const seen = new Set()
+
+  for (const raw of matches) {
+    const cleaned = raw.replace(/[.,!?;:)}\]]+$/, '')
+    const normalized = cleaned.startsWith('www.') ? `http://${cleaned}` : cleaned
+    try {
+      const parsed = new URL(normalized)
+      if (!['http:', 'https:'].includes(parsed.protocol) || seen.has(normalized)) continue
+      seen.add(normalized)
+      urls.push(normalized)
+    } catch {
+      // The rules engine separately reports malformed links.
+    }
+  }
+
+  return urls
+}
+
 function inspectLinks(text) {
   const matches = text.match(/(?:https?:\/\/|www\.)[^\s<>()]+/gi) ?? []
   const findings = []

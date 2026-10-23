@@ -11,6 +11,17 @@ const examples = [
   { label: 'Everyday message', message: 'Hi! Are we still meeting at the library at 4 PM?' },
 ]
 
+const urlCheckLabels = {
+  malicious: 'Malicious detections',
+  suspicious: 'Suspicious detections',
+  no_detections: 'No malicious detections',
+  unrated: 'No vendor verdict yet',
+  pending: 'Scan pending',
+  not_submitted: 'Not found; scan not submitted',
+  unavailable: 'Check unavailable',
+  not_configured: 'VirusTotal not configured'
+}
+
 function App() {
   const [message, setMessage] = useState('')
   const [result, setResult] = useState(null)
@@ -59,6 +70,7 @@ function App() {
       analysis.assessment ? `${analysis.assessment.scamType}: ${analysis.assessment.summary}` : '',
       'Signals:',
       ...analysis.signals.map((signal) => `- ${signal.name}${signal.evidence ? ` | Evidence: ${signal.evidence}` : ''}${signal.explanation ? ` | ${signal.explanation}` : ''}`),
+      ...(analysis.urlChecks?.results?.length ? ['VirusTotal URL checks:', ...analysis.urlChecks.results.map((item) => `- ${item.url}: ${urlCheckLabels[item.status] || item.status}${Number.isInteger(item.detections) ? ` (${item.detections}/${item.total} detections)` : ''}`)] : []),
       'Recommended actions:',
       ...analysis.advice.map((item) => `- ${item}`),
       'This is an automated indicator, not proof that a message is fraudulent.'
@@ -138,7 +150,7 @@ function App() {
                   <button type="submit" className="primary-button" disabled={isAnalyzing}>{isAnalyzing ? 'Reviewing…' : <>Review message <span aria-hidden="true">↗</span></>}</button>
                 </div>
               </div>
-              <p className="privacy" id="privacy-note"><span aria-hidden="true">Privacy</span> {config?.aiAssistedAvailable ? config.externalProvider === 'Groq' ? <>Message sent to ScamShield and Groq. Inference inputs and outputs are not retained by default, but may be temporarily retained for reliability or abuse investigations. <a href="https://console.groq.com/docs/your-data" target="_blank" rel="noreferrer">See Groq data handling</a>.</> : <>Message sent to ScamShield and Google Gemini. Interaction storage is disabled; Google abuse monitoring still applies. <a href="https://ai.google.dev/gemini-api/docs/zdr" target="_blank" rel="noreferrer">See Gemini data handling</a>.</> : <>Message analyzed by ScamShield rules. Message history is not saved.</>}</p>
+              <p className="privacy" id="privacy-note"><span aria-hidden="true">Privacy</span> {config?.aiAssistedAvailable ? config.externalProvider === 'Groq' ? <>Message sent to ScamShield and Groq. Inference inputs and outputs are not retained by default, but may be temporarily retained for reliability or abuse investigations. <a href="https://console.groq.com/docs/your-data" target="_blank" rel="noreferrer">See Groq data handling</a>.</> : <>Message sent to ScamShield and Google Gemini. Interaction storage is disabled; Google abuse monitoring still applies. <a href="https://ai.google.dev/gemini-api/docs/zdr" target="_blank" rel="noreferrer">See Gemini data handling</a>.</> : <>Message analyzed by ScamShield rules. Message history is not saved.</>} {config?.virusTotalAvailable ? <>URLs in messages are automatically sent to VirusTotal for lookup or scanning. VirusTotal says submitted or queried URLs are added to its community dataset. Do not include private or password-reset links. The free Public API is for non-commercial use and limited to 4 requests per minute. <a href="https://docs.virustotal.com/reference/scan-url" target="_blank" rel="noreferrer">VirusTotal data notice</a>.</> : <>VirusTotal URL checks are not configured on this service.</>}</p>
 
               {result && (
                 <section className={`results${result.error ? ' results-error' : ''}`} aria-live="polite" aria-atomic="true">
@@ -150,6 +162,7 @@ function App() {
                       </div>
                       <div className={`risk-badge risk-${result.level.toLowerCase()}`}><span><small>RISK LEVEL</small><strong>{result.level}</strong></span></div>
                     </div>
+                    {result.urlChecks && <section className="url-checks" aria-label="VirusTotal URL checks"><div className="url-checks-heading"><h3>VirusTotal URL checks</h3><span>{result.urlChecks.configured ? 'Automatic' : 'Not configured'}</span></div>{result.urlChecks.results.map((item, index) => <div className={`url-check-row url-check-${item.status}`} key={`${item.url}-${index}`}><div><code>{item.url}</code><strong>{urlCheckLabels[item.status] || item.status}</strong>{Number.isInteger(item.detections) && <small>{item.malicious} malicious · {item.suspicious} suspicious · {item.total} vendors</small>}{item.message && <small>{item.message}</small>}</div>{item.reportUrl && <a href={item.reportUrl} target="_blank" rel="noreferrer">VirusTotal report ↗</a>}</div>)}{result.urlChecks.results.some((item) => ['malicious', 'suspicious'].includes(item.status)) && <p className="url-check-note">VirusTotal findings affect the overall risk level. The pattern match score reflects ScamShield rules only.</p>}{result.urlChecks.skipped > 0 && <p className="url-check-note">{result.urlChecks.skipped} additional link{result.urlChecks.skipped === 1 ? '' : 's'} not checked (maximum 3 per message).</p>}{result.urlChecks.results.some((item) => item.status === 'not_submitted') && <p className="url-check-note">Only one new URL is submitted for scanning per message to stay within the free API quota. Review the message again later to update pending results.</p>}{result.urlChecks.results.some((item) => item.status === 'pending') && <p className="url-check-note">A new URL was submitted for scanning. Review this message again in about 30 seconds for the report.</p>}{!result.urlChecks.configured && <p className="url-check-note">Add <code>VIRUSTOTAL_API_KEY</code> to the server environment to enable automatic checks.</p>}</section>}
                     {result.mode === 'ai-assisted' ? <><div className="assessment-summary"><strong>{result.assessment?.scamType}</strong><p>{result.assessment?.summary}</p><small>AI assessment may be wrong. Risk level is not a probability.</small></div>{result.assessment?.attackChain?.length > 0 && <div className="attack-chain"><h3>Social engineering sequence</h3><p className="chain-intro">How the conversation may be building toward an unsafe action</p><ol>{result.assessment.attackChain.map((step, index) => <li key={`${step.stage}-${index}`}><span className="chain-index">{String(index + 1).padStart(2, '0')}</span><span><strong>{step.stage}</strong><q>{step.evidence}</q><small>{step.interpretation}</small></span></li>)}</ol></div>}</> : <><div className="score-row"><span>Pattern match score</span><strong>{result.score}<span> / 100</span></strong></div><div className="score-track" role="progressbar" aria-label="Pattern match score" aria-valuenow={result.score} aria-valuemin="0" aria-valuemax="100"><span className={`score-fill fill-${result.level.toLowerCase()}`} style={{ width: `${result.score}%` }} /></div><p className="score-note">A pattern match score is not the probability that a message is a scam.</p></>}
                     {result.level === 'High' && (() => {
                       const financialRisk = [...(result.categories || []), result.assessment?.scamType || ''].some((category) => /payment|upi|financial/i.test(category))
