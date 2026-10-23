@@ -26,3 +26,26 @@ export async function analyzeMessageRequest(message, useAiAnalysis = false) {
   }
   return payload.analysis
 }
+
+export async function analyzeMediaRequest(file, frames) {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('frames', JSON.stringify(frames))
+  let response
+  try {
+    response = await fetch('/api/analyze-media', {
+      method: 'POST',
+      headers: { Accept: 'application/json' },
+      body: form,
+      signal: AbortSignal.timeout(90000)
+    })
+  } catch {
+    throw new Error('ScamShield could not reach its media analysis service. Check your connection and try again.')
+  }
+  const payload = await response.json().catch(() => null)
+  if (!response.ok) throw new Error(payload?.error?.message ?? 'The media analysis service could not complete this request.')
+  if (!payload?.mediaAnalysis || !Array.isArray(payload.mediaAnalysis.visibleText)) {
+    throw new Error('The media analysis service returned an unexpected response.')
+  }
+  return payload.mediaAnalysis
+}

@@ -1,5 +1,5 @@
 ﻿import { useEffect, useRef, useState } from 'react'
-import { analyzeMessageRequest, getAnalyzerConfig } from './api'
+import { analyzeMediaRequest, analyzeMessageRequest, getAnalyzerConfig } from './api'
 import './App.css'
 
 const examples = [
@@ -22,18 +22,139 @@ const urlCheckLabels = {
   not_configured: 'VirusTotal not configured'
 }
 
+const mediaOriginLabels = {
+  likely_ai_generated: 'Visual signs suggest AI generation',
+  no_clear_ai_signs: 'No clear AI signs found',
+  unclear: 'Origin unclear'
+}
+
+function canvasFrame(source) {
+  const width = source.videoWidth || source.naturalWidth
+  const height = source.videoHeight || source.naturalHeight
+  const scale = Math.min(1, 1280 / Math.max(width, height))
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, Math.round(width * scale))
+  canvas.height = Math.max(1, Math.round(height * scale))
+  const context = canvas.getContext('2d')
+  if (!context) throw new Error('This browser could not prepare the media preview.')
+  context.drawImage(source, 0, 0, canvas.width, canvas.height)
+  return canvas.toDataURL('image/jpeg', 0.82)
+}
+
+async function prepareMediaFrames(file) {
+  const objectUrl = URL.createObjectURL(file)
+  try {
+    if (file.type.startsWith('image/')) {
+      const image = new Image()
+      image.src = objectUrl
+      await image.decode()
+      return [canvasFrame(image)]
+    }
+
+    const video = document.createElement('video')
+    video.preload = 'metadata'
+    video.muted = true
+    video.src = objectUrl
+    await new Promise((resolve, reject) => {
+      video.addEventListener('loadedmetadata', resolve, { once: true })
+      video.addEventListener('error', () => reject(new Error('This video could not be opened in your browser.')), { once: true })
+    })
+    if (!Number.isFinite(video.duration) || video.duration <= 0) throw new Error('This video has no readable frames.')
+    const times = [...new Set([video.duration * 0.1, video.duration * 0.5, video.duration * 0.9].map((time) => Math.min(Math.max(0, time), Math.max(0, video.duration - 0.05))))]
+    const frames = []
+    for (const time of times) {
+      await new Promise((resolve, reject) => {
+        video.addEventListener('seeked', resolve, { once: true })
+        video.addEventListener('error', () => reject(new Error('A video frame could not be read.')), { once: true })
+        video.currentTime = time
+      })
+      frames.push(canvasFrame(video))
+    }
+    return frames
+  } finally {
+    URL.revokeObjectURL(objectUrl)
+  }
+}
+
 function App() {
   const [message, setMessage] = useState('')
   const [result, setResult] = useState(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [config, setConfig] = useState(null)
   const [copyState, setCopyState] = useState('')
+  const [mediaFile, setMediaFile] = useState(null)
+  const [mediaFrames, setMediaFrames] = useState([])
+  const [mediaPreviewUrl, setMediaPreviewUrl] = useState('')
+  const [mediaResult, setMediaResult] = useState(null)
+  const [mediaError, setMediaError] = useState('')
+  const [mediaPreparing, setMediaPreparing] = useState(false)
   const configRequest = useRef(null)
 
   useEffect(() => {
     configRequest.current = getAnalyzerConfig().catch(() => ({ aiAssistedAvailable: false }))
     configRequest.current.then(setConfig)
   }, [])
+
+  useEffect(() => () => {
+    if (mediaPreviewUrl) URL.revokeObjectURL(mediaPreviewUrl)
+  }, [mediaPreviewUrl])
+
+  async function handleMediaChange(event) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'video/mp4', 'video/webm']
+    if (!allowedTypes.includes(file.type)) {
+      setMediaError('Use a JPEG, PNG, WebP, GIF, MP4, or WebM file.')
+      setMediaFile(null)
+      setMediaFrames([])
+      setMediaPreviewUrl('')
+      setMediaResult(null)
+      return
+    }
+    if (file.size > 20 * 1024 * 1024) {
+      setMediaError('Media files must be 20 MB or smaller.')
+      setMediaFile(null)
+      setMediaFrames([])
+      setMediaPreviewUrl('')
+      setMediaResult(null)
+      return
+    }
+    setMediaPreparing(true)
+    setMediaError('')
+    setMediaResult(null)
+    try {
+      const frames = await prepareMediaFrames(file)
+      setMediaPreviewUrl(URL.createObjectURL(file))
+      setMediaFile(file)
+      setMediaFrames(frames)
+    } catch (error) {
+      setMediaFile(null)
+      setMediaFrames([])
+      setMediaPreviewUrl('')
+      setMediaResult(null)
+      setMediaError(error.message || 'Could not prepare this media file.')
+    } finally {
+      setMediaPreparing(false)
+    }
+  }
+
+  async function handleAnalyzeMedia() {
+    if (!mediaFile || !mediaFrames.length) return
+    setIsAnalyzing(true)
+    setMediaError('')
+    setMediaResult(null)
+    try {
+      const analyzerConfig = config ?? await (configRequest.current ?? getAnalyzerConfig())
+      setConfig(analyzerConfig)
+      if (!analyzerConfig.mediaAnalysisAvailable) throw new Error('Media analysis is not configured. Add GROQ_API_KEY to the server environment.')
+      setMediaResult(await analyzeMediaRequest(mediaFile, mediaFrames))
+    } catch (error) {
+      setMediaError(error.message)
+    } finally {
+      setIsAnalyzing(false)
+    }
+  }
 
   async function handleAnalyze(event) {
     event.preventDefault()
@@ -57,11 +178,21 @@ function App() {
   function handleClear() {
     setMessage('')
     setResult(null)
+    setMediaFile(null)
+    setMediaFrames([])
+    setMediaPreviewUrl('')
+    setMediaResult(null)
+    setMediaError('')
   }
 
   function loadExample(example) {
     setMessage(example.message)
     setResult(null)
+    setMediaFile(null)
+    setMediaFrames([])
+    setMediaPreviewUrl('')
+    setMediaResult(null)
+    setMediaError('')
   }
 
   async function copyAssessment(analysis) {
@@ -143,14 +274,41 @@ function App() {
                 maxLength={5000}
                 aria-describedby="privacy-note"
               />
+              <section className="media-upload" aria-labelledby="media-heading">
+                <div className="media-upload-heading"><div><span className="section-kicker">IMAGE &amp; VIDEO CHECK</span><h3 id="media-heading">Review a photo, poster, or video</h3><p>We’ll describe the content, read visible text, flag supported safety concerns, and estimate whether it looks AI-generated.</p></div>
+                  <label className="secondary-button media-pick" htmlFor="media-file">{mediaFile ? 'Choose another file' : 'Choose media'}</label>
+                </div>
+                <input id="media-file" className="media-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm" onChange={handleMediaChange} disabled={isAnalyzing || mediaPreparing} />
+                {mediaPreparing && <p className="media-status" role="status">Preparing media preview…</p>}
+                {mediaFile && <div className="media-preview">
+                  {mediaFile.type.startsWith('video/') ? <video src={mediaPreviewUrl} controls preload="metadata" /> : <img src={mediaPreviewUrl} alt="Selected media preview" />}
+                  <div><strong>{mediaFile.name}</strong><small>{(mediaFile.size / (1024 * 1024)).toFixed(1)} MB · {mediaFrames.length} {mediaFile.type.startsWith('video/') ? 'sampled frames' : 'preview'}</small></div>
+                  <button type="button" className="media-remove" onClick={() => { setMediaFile(null); setMediaFrames([]); setMediaPreviewUrl(''); setMediaResult(null); setMediaError('') }} disabled={isAnalyzing}>Remove</button>
+                </div>}
+                <p className="media-disclosure">{config?.mediaAnalysisAvailable ? <>Selected media is sent to ScamShield and Groq. Videos are reviewed using up to 3 sampled frames; the video is also sent to Groq Whisper for speech transcription. Groq may temporarily retain inputs for abuse and reliability investigations. <a href="https://console.groq.com/docs/your-data" target="_blank" rel="noreferrer">Data handling</a>.</> : <>Media review needs a server-side <code>GROQ_API_KEY</code>. Images and videos up to 20 MB are supported; video review samples up to 3 frames.</>} AI-origin detection is an estimate, not forensic proof.</p>
+                {mediaError && <p className="media-error" role="alert">{mediaError}</p>}
+                <button type="button" className="primary-button media-review" onClick={handleAnalyzeMedia} disabled={!mediaFile || !mediaFrames.length || isAnalyzing || mediaPreparing}>{isAnalyzing && mediaFile ? 'Reviewing media…' : 'Review media'} <span aria-hidden="true">↗</span></button>
+              </section>
               <div className="form-footer">
                 <span className="char-count">{message.length.toLocaleString()} / 5,000</span>
                 <div className="actions">
-                  <button type="button" className="secondary-button" onClick={handleClear} disabled={isAnalyzing || (!message && !result)}>Clear</button>
+                  <button type="button" className="secondary-button" onClick={handleClear} disabled={isAnalyzing || (!message && !result && !mediaFile && !mediaResult && !mediaError)}>Clear</button>
                   <button type="submit" className="primary-button" disabled={isAnalyzing}>{isAnalyzing ? 'Reviewing…' : <>Review message <span aria-hidden="true">↗</span></>}</button>
                 </div>
               </div>
               <p className="privacy" id="privacy-note"><span aria-hidden="true">Privacy</span> {config?.aiAssistedAvailable ? config.externalProvider === 'Groq' ? <>Message sent to ScamShield and Groq. Inference inputs and outputs are not retained by default, but may be temporarily retained for reliability or abuse investigations. <a href="https://console.groq.com/docs/your-data" target="_blank" rel="noreferrer">See Groq data handling</a>.</> : <>Message sent to ScamShield and Google Gemini. Interaction storage is disabled; Google abuse monitoring still applies. <a href="https://ai.google.dev/gemini-api/docs/zdr" target="_blank" rel="noreferrer">See Gemini data handling</a>.</> : <>Message analyzed by ScamShield rules. Message history is not saved.</>} {config?.virusTotalAvailable ? <>URLs in messages are automatically sent to VirusTotal for lookup or scanning. VirusTotal says submitted or queried URLs are added to its community dataset. Do not include private or password-reset links. The free Public API is for non-commercial use and limited to 4 requests per minute. <a href="https://docs.virustotal.com/reference/scan-url" target="_blank" rel="noreferrer">VirusTotal data notice</a>.</> : <>VirusTotal URL checks are not configured on this service.</>}</p>
+
+              {mediaResult && <section className="results media-results" aria-live="polite" aria-atomic="true">
+                <div className="result-topline"><div><p className="result-kicker">GROQ VISION{mediaResult.mediaType === 'video' ? ' + WHISPER' : ''}</p><h2>Media assessment</h2></div><span className={`origin-badge origin-${mediaResult.authenticity.verdict}`}>{mediaOriginLabels[mediaResult.authenticity.verdict] || 'Origin unclear'} · {mediaResult.authenticity.confidence} confidence</span></div>
+                <p className="media-summary">{mediaResult.summary || 'No clear description was returned.'}</p>
+                {mediaResult.authenticity.reasons.length > 0 && <div className="media-result-block"><h3>Origin clues</h3><ul>{mediaResult.authenticity.reasons.map((item, index) => <li key={index}>{item}</li>)}</ul></div>}
+                {mediaResult.visibleText.length > 0 && <div className="media-result-block"><h3>Text found in media</h3><ul>{mediaResult.visibleText.map((item, index) => <li key={index}>{item}</li>)}</ul></div>}
+                {mediaResult.claims.length > 0 && <div className="media-result-block"><h3>Claims shown</h3><ul>{mediaResult.claims.map((item, index) => <li key={index}>{item}</li>)}</ul></div>}
+                {mediaResult.safetyConcerns.length > 0 && <div className="media-result-block media-concerns"><h3>Safety concerns</h3><ul>{mediaResult.safetyConcerns.map((item, index) => <li key={index}>{item}</li>)}</ul></div>}
+                {mediaResult.mediaType === 'video' && <div className="media-result-block"><h3>Speech transcript</h3>{mediaResult.transcript ? <p>{mediaResult.transcript}</p> : <p>{mediaResult.transcriptStatus === 'no_speech_detected' ? 'No speech was detected.' : mediaResult.transcriptStatus || 'No transcript available.'}</p>}</div>}
+                {mediaResult.metadataIndicators.length > 0 && <div className="media-result-block"><h3>Unverified metadata clues</h3><ul>{mediaResult.metadataIndicators.map((item, index) => <li key={index}>{item}</li>)}</ul><small>Metadata can be forged or copied; these markers are not proof of origin.</small></div>}
+                <p className="result-footnote">{mediaResult.authenticity.caveat} “No clear AI signs” does not mean the media is authentic. Video review only sees sampled frames and may miss content between them.</p>
+              </section>}
 
               {result && (
                 <section className={`results${result.error ? ' results-error' : ''}`} aria-live="polite" aria-atomic="true">

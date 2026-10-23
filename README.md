@@ -17,6 +17,7 @@ Open the Vite URL shown in the terminal. The dev command starts both the API on 
 
 - `GET /api/health` returns service health.
 - `POST /api/analyze` accepts `{"message":"..."}` and returns an analysis with a request ID.
+- `POST /api/analyze-media` accepts multipart `file` and `frames` fields for image/video review. Media review requires `GROQ_API_KEY`.
 
 Requests must be JSON. Messages are limited to 5,000 characters. The API enforces a request body limit, applies a small per-process rate limit, sends browser security headers, and does not log message contents. The rate limiter is an in-memory prototype guard; it resets at restart and is not suitable across multiple replicas.
 
@@ -36,6 +37,7 @@ Groq settings:
 SCAMSHIELD_AI_PROVIDER=groq
 GROQ_API_KEY=<your server-side API key>
 GROQ_MODEL=openai/gpt-oss-20b
+GROQ_VISION_MODEL=qwen/qwen3.8-27b
 ```
 
 Gemini settings:
@@ -47,6 +49,8 @@ GEMINI_MODEL=gemini-3.8-flash
 ```
 
 When Groq is configured, each analysis is sent to Groq. Groq says inference inputs and outputs are not retained by default, though it may temporarily retain them for reliability or abuse investigations. The interface discloses the provider and links to [Groq data handling](https://console.groq.com/docs/your-data). Gemini analyses are sent to Google; the interface links to [Gemini API data handling](https://ai.google.dev/gemini-api/docs/zdr). If no AI provider is configured, only the rules-based scan is available.
+
+Media review supports JPEG, PNG, WebP, GIF, MP4, and WebM uploads up to 20 MB. Groq Vision reviews images and up to three browser-sampled video frames for visible text, claims, safety concerns, and tentative AI-generation clues. Videos are also sent to Groq Whisper for speech transcription. The upload is processed in memory and is not saved by this service. Media review requires `GROQ_API_KEY` even when message analysis uses rules or Gemini; `GROQ_VISION_MODEL` defaults to `qwen/qwen3.8-27b`. These origin estimates are not forensic detection and cannot establish authenticity. The interface discloses media processing and links to Groq data handling before upload.
 
 ## Run in a container
 

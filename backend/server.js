@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { analyzeMessage } from '../shared/detector.js'
 import { classifyMessageWithGemini } from './gemini-classifier.js'
 import { classifyMessageWithGroq } from './groq-classifier.js'
+import { analyzeUploadedMedia } from './media-analyzer.js'
 import { checkMessageUrls } from './virustotal.js'
 
 const projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
@@ -24,16 +25,20 @@ if (!providerKeyAvailable) console.warn(`SCAMSHIELD_AI_PROVIDER=${requestedAiPro
 const geminiModel = process.env.GEMINI_MODEL || 'gemini-3.8-flash'
 const groqModel = process.env.GROQ_MODEL || 'openai/gpt-oss-20b'
 const virusTotalAvailable = Boolean(process.env.VIRUSTOTAL_API_KEY)
+const mediaAnalysisAvailable = Boolean(process.env.GROQ_API_KEY)
 const aiEnabled = aiProvider !== 'rules'
 const externalProvider = aiProvider === 'gemini' ? 'Gemini' : aiProvider === 'groq' ? 'Groq' : null
 const port = readInteger(process.env.PORT, 8787, 1, 65535)
 const host = process.env.HOST || '127.0.0.1'
 const maxBodyBytes = readInteger(process.env.MAX_BODY_BYTES, 24000, 1024, 65536)
+const maxMediaBodyBytes = readInteger(process.env.MAX_MEDIA_BODY_BYTES, 32 * 1024 * 1024, 1024, 100 * 1024 * 1024)
 const rateWindowMs = readInteger(process.env.RATE_LIMIT_WINDOW_MS, 60000, 1000, 3600000)
 const rateLimit = readInteger(process.env.RATE_LIMIT_MAX, 30, 1, 10000)
+const mediaRateLimit = readInteger(process.env.MEDIA_RATE_LIMIT_MAX, 5, 1, 60)
 const allowedOrigins = new Set((process.env.ALLOWED_ORIGINS || (isProduction ? '' : 'http://localhost:5173,http://127.0.0.1:5173'))
   .split(',').map((origin) => origin.trim()).filter(Boolean))
 const rateBuckets = new Map()
+const mediaRateBuckets = new Map()
 const mimeTypes = new Map([
   ['.html', 'text/html; charset=utf-8'], ['.js', 'text/javascript; charset=utf-8'],
   ['.css', 'text/css; charset=utf-8'], ['.svg', 'image/svg+xml'], ['.png', 'image/png'],
@@ -65,7 +70,7 @@ function addSecurityHeaders(response) {
   response.setHeader('X-Frame-Options', 'DENY')
   response.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
   response.setHeader('Cross-Origin-Resource-Policy', 'same-origin')
-  response.setHeader('Content-Security-Policy', "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'")
+  response.setHeader('Content-Security-Policy', "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'")
 }
 
 function originAllowed(request) {
@@ -103,6 +108,20 @@ function consumeRateLimit(request) {
   return { allowed: bucket.count <= rateLimit, remaining: Math.max(0, rateLimit - bucket.count), resetAt: bucket.resetAt }
 }
 
+function consumeMediaRateLimit(request) {
+  const now = Date.now()
+  const key = request.socket.remoteAddress || 'unknown'
+  let bucket = mediaRateBuckets.get(key)
+  if (!bucket || bucket.resetAt <= now) bucket = { count: 0, resetAt: now + 60000 }
+  bucket.count += 1
+  mediaRateBuckets.set(key, bucket)
+  if (mediaRateBuckets.size > 5000) {
+    for (const [address, entry] of mediaRateBuckets) if (entry.resetAt <= now) mediaRateBuckets.delete(address)
+    if (mediaRateBuckets.size > 5000) mediaRateBuckets.clear()
+  }
+  return { allowed: bucket.count <= mediaRateLimit, remaining: Math.max(0, mediaRateLimit - bucket.count), resetAt: bucket.resetAt }
+}
+
 async function readJson(request) {
   const chunks = []
   let size = 0
@@ -123,6 +142,22 @@ async function readJson(request) {
     error.status = 400
     throw error
   }
+}
+
+async function readRawBody(request, limit) {
+  const chunks = []
+  let size = 0
+  for await (const chunk of request) {
+    size += chunk.length
+    if (size > limit) {
+      request.resume()
+      const error = new Error('Uploaded media is too large.')
+      error.status = 413
+      throw error
+    }
+    chunks.push(chunk)
+  }
+  return Buffer.concat(chunks)
 }
 
 async function serveStatic(pathname, request, response) {
@@ -188,10 +223,77 @@ const server = createServer(async (request, response) => {
       writeJson(response, 200, {
         analysisModes: aiEnabled ? ['rules', 'ai-assisted'] : ['rules'],
         aiAssistedAvailable: aiEnabled,
+        mediaAnalysisAvailable,
         externalProvider,
         virusTotalAvailable,
         requestId
       })
+      return
+    }
+    if (pathname === '/api/analyze-media' && request.method === 'POST') {
+      const limit = consumeMediaRateLimit(request)
+      response.setHeader('RateLimit-Limit', String(mediaRateLimit))
+      response.setHeader('RateLimit-Remaining', String(limit.remaining))
+      response.setHeader('RateLimit-Reset', String(Math.ceil(limit.resetAt / 1000)))
+      if (!limit.allowed) {
+        request.resume()
+        writeJson(response, 429, { error: { code: 'RATE_LIMITED', message: 'Media review limit reached. Wait a moment and try again.', requestId } }, { 'Retry-After': String(Math.ceil((limit.resetAt - Date.now()) / 1000)) })
+        return
+      }
+      if (!mediaAnalysisAvailable) {
+        request.resume()
+        writeJson(response, 503, { error: { code: 'MEDIA_ANALYSIS_NOT_CONFIGURED', message: 'Media analysis is not configured. Add GROQ_API_KEY to the server environment.', requestId } })
+        return
+      }
+      const contentType = String(request.headers['content-type'] || '')
+      if (!contentType.toLowerCase().startsWith('multipart/form-data;')) {
+        request.resume()
+        writeJson(response, 415, { error: { code: 'UNSUPPORTED_MEDIA_TYPE', message: 'Upload media as multipart form data.', requestId } })
+        return
+      }
+      const contentLength = Number(request.headers['content-length'] || 0)
+      if (contentLength > maxMediaBodyBytes) {
+        request.resume()
+        writeJson(response, 413, { error: { code: 'MEDIA_TOO_LARGE', message: 'The media upload is too large.', requestId } })
+        return
+      }
+      try {
+        const rawBody = await readRawBody(request, maxMediaBodyBytes)
+        const formRequest = new Request('http://localhost/api/analyze-media', {
+          method: 'POST',
+          headers: { 'Content-Type': contentType },
+          body: rawBody
+        })
+        const form = await formRequest.formData()
+        if ([...form.keys()].some((key) => !['file', 'frames'].includes(key))) {
+          writeJson(response, 400, { error: { code: 'INVALID_INPUT', message: 'The upload contains an unsupported field.', requestId } })
+          return
+        }
+        const file = form.get('file')
+        if (!file || typeof file.arrayBuffer !== 'function') {
+          writeJson(response, 400, { error: { code: 'INVALID_INPUT', message: 'Choose an image or video to review.', requestId } })
+          return
+        }
+        let frames
+        try {
+          frames = JSON.parse(String(form.get('frames') || ''))
+        } catch {
+          writeJson(response, 400, { error: { code: 'INVALID_INPUT', message: 'The media preview data is invalid.', requestId } })
+          return
+        }
+        const mediaAnalysis = await analyzeUploadedMedia({
+          apiKey: process.env.GROQ_API_KEY,
+          bytes: Buffer.from(await file.arrayBuffer()),
+          mimeType: file.type,
+          fileName: file.name,
+          frames
+        })
+        writeJson(response, 200, { requestId, mediaAnalysis })
+      } catch (error) {
+        const code = error.status === 413 ? 'MEDIA_TOO_LARGE' : error.status === 415 ? 'UNSUPPORTED_MEDIA_TYPE' : error.status === 503 ? 'MEDIA_PROVIDER_ERROR' : 'INVALID_MEDIA'
+        if (error.providerStatus) console.error(`[${requestId}] Media provider request failed: HTTP ${error.providerStatus}`)
+        writeJson(response, error.status || 400, { error: { code, message: error.message || 'The media upload could not be analyzed.', requestId } })
+      }
       return
     }
     if (pathname === '/api/analyze' && request.method === 'POST') {

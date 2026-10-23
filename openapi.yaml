@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: ScamShield API
   version: 1.0.0
-  description: Privacy-conscious message analysis prototype. Message contents are processed in memory and are not persisted by this service. If configured, extracted URLs are sent to VirusTotal, whose API adds submitted or queried URLs to its community dataset.
+  description: Privacy-conscious analysis prototype. Message and media contents are processed in memory and are not persisted by this service. If configured, extracted URLs are sent to VirusTotal, whose API adds submitted or queried URLs to its community dataset. Media files are sent to Groq for visual analysis and video transcription.
 servers:
   - url: /
 paths:
@@ -39,9 +39,58 @@ paths:
                     type: array
                     items: { type: string, enum: [rules, ai-assisted] }
                   aiAssistedAvailable: { type: boolean }
+                  mediaAnalysisAvailable: { type: boolean }
                   externalProvider: { type: [string, 'null'] }
                   virusTotalAvailable: { type: boolean }
                   requestId: { type: string, format: uuid }
+  /api/analyze-media:
+    post:
+      operationId: analyzeMedia
+      summary: Review image or video content and possible AI-generation signs
+      description: Accepts JPEG, PNG, WebP, GIF, MP4, or WebM up to 20 MB. The browser sends up to three JPEG preview frames for visual review; the original video is also sent to Groq Whisper for audio transcription. Results are estimates, not proof of origin. Media is processed in memory and sent to Groq.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, frames]
+              properties:
+                file: { type: string, format: binary }
+                frames: { type: string, description: JSON array of up to three data URL previews }
+      responses:
+        '200':
+          description: Media content and tentative origin assessment
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [requestId, mediaAnalysis]
+                properties:
+                  requestId: { type: string, format: uuid }
+                  mediaAnalysis:
+                    type: object
+                    properties:
+                      mediaType: { type: string, enum: [image, video] }
+                      summary: { type: string }
+                      visibleText: { type: array, items: { type: string } }
+                      claims: { type: array, items: { type: string } }
+                      safetyConcerns: { type: array, items: { type: string } }
+                      authenticity:
+                        type: object
+                        properties:
+                          verdict: { type: string, enum: [likely_ai_generated, no_clear_ai_signs, unclear] }
+                          confidence: { type: string, enum: [low, medium, high] }
+                          reasons: { type: array, items: { type: string } }
+                          caveat: { type: string }
+                      metadataIndicators: { type: array, items: { type: string } }
+                      transcript: { type: string }
+                      transcriptStatus: { type: string }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '413': { $ref: '#/components/responses/TooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
   /api/analyze:
     post:
       operationId: analyzeMessage
